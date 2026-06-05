@@ -333,7 +333,7 @@ run_network_pump :: proc(cluster: ^Cluster) {
     }
 }
 
-run_socket :: proc(handle: ^curl.CURL, token: string) {
+run :: proc(handle: ^curl.CURL, token: string) {
     url := strings.clone_to_cstring("wss://gateway.discord.gg/?v=10&encoding=json", context.temp_allocator)
     curl.easy_setopt(handle, .URL, url)
     curl.easy_setopt(handle, .CONNECT_ONLY, i32(2))

@@ -5,7 +5,7 @@ import "core:fmt"
 import curl "vendor:curl"
 import "core:flags"
 
-import socket "socket"
+import discord "discord"
 
 Options :: struct {
 	token: string `args:"name=token,required" usage:"Your discord bot token"`
@@ -24,5 +24,5 @@ main :: proc() {
 	handle := curl.easy_init()
 	defer curl.easy_cleanup(handle)
 
-	socket.run_socket(handle, opt.token)
+	discord.run(handle, opt.token)
 }
