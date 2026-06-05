@@ -1,15 +1,18 @@
 package main
 
+import "core:time"
+import "core:mem"
 import "core:os"
 import "core:fmt"
 import curl "vendor:curl"
 import "core:flags"
+import "core:testing"
 
 import discord "discord"
 
 Options :: struct {
 	token: string `args:"name=token,required" usage:"Your discord bot token"`
-} 
+}
 
 main :: proc() {
 	opt: Options
@@ -21,8 +24,5 @@ main :: proc() {
 	}
 	defer curl.global_cleanup()
 
-	handle := curl.easy_init()
-	defer curl.easy_cleanup(handle)
-
-	discord.run(handle, opt.token)
+	discord.run(opt.token)
 }

@@ -7,8 +7,8 @@ import "core:fmt"
 import "core:slice"
 import "core:encoding/json"
 
-API_VERSION :: "v10"
-DISCORD_BASE_URL :: "https://discord.com/api/" + API_VERSION
+API_VERSION :: "10"
+DISCORD_BASE_URL :: "https://discord.com/api/v" + API_VERSION
 
 Discord_Client :: struct {
 	curl_handle: ^curl.CURL,
