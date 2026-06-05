@@ -139,3 +139,30 @@ Message :: struct {
 	call:                   Maybe(Message_Call)           `json:"call"`,              // FIXED
 	shared_client_theme:    Maybe(Shared_Client_Theme)    `json:"shared_client_theme"`, // FIXED
 }
+
+Message_Update_Payload :: struct {
+	id: Snowflake `json:"id"`,
+
+	content: Maybe(string) `json:"content"`,
+	edited_timestamp: Maybe(string) `json:"edited_timestamp"`,
+
+	attachments: Maybe([dynamic]Attachment) `json:"attachments"`,
+	embeds: Maybe([dynamic]Embed) `json:"embeds"`,
+
+	pinned: Maybe(bool) `json:"pinned"`,
+	flags: Maybe(Message_Flags_Set) `json:"flags"`,
+
+	mention_everyone: Maybe(bool) `json:"mention_everyone"`,
+	tts: Maybe(bool) `json:"tts"`,
+}
+
+Message_Update_Args :: struct {
+	Before: Message, 
+	After: Message
+}
+
+Message_Delete_Event :: struct {
+	id: Snowflake `json:"id"`,
+	channel_id: Snowflake `json:"channel_id"`,
+	guild_id: Maybe(Snowflake) `json:"guild_id"`,
+}

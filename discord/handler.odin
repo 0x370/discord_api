@@ -1,8 +1,8 @@
 package discord
 
+import "base:runtime"
 import "core:encoding/json"
 import "core:fmt"
-import "core:mem"
 import "core:strings"
 import "core:sync"
 import "core:thread"
@@ -47,6 +47,12 @@ opcodes :: enum int {
 	OP_HEARTBEAT_ACK   = 11,
 }
 
+MAX_CACHED_MESSAGES :: 10000
+Event_Callback :: #type proc(data: rawptr)
+Event_Listener :: struct {
+		callback: Event_Callback,
+}
+
 Cluster :: struct {
 	curl_handle:        ^curl.CURL,
 	worker_pool:        thread.Pool,
@@ -62,6 +68,32 @@ Cluster :: struct {
 	session_id:         string,
 	resume_url:         string,
 	heartbeat_interval: int,
+	allocator: 			runtime.Allocator,
+
+	cache_mutex: sync.Mutex,
+	message_cache: map[api.Snowflake]^api.Message,
+	message_order: [dynamic]api.Snowflake,
+	event_handlers: map[string][dynamic]Event_Listener
+}
+
+on :: proc(cluster: ^Cluster, event_name: string, callback: Event_Callback) {
+	sync.lock(&cluster.cache_mutex)
+
+	if _, ok := cluster.event_handlers[event_name]; !ok {
+		cluster.event_handlers[event_name] = make(
+			[dynamic]Event_Listener,
+			allocator = cluster.allocator,
+		)
+	}
+
+	append(
+		&cluster.event_handlers[event_name],
+		Event_Listener {
+			callback = callback,
+		},
+	)
+
+	sync.unlock(&cluster.cache_mutex)
 }
 
 Ready_Event_Data :: struct {
@@ -163,7 +195,6 @@ heartbeat_pool_task :: proc(task: thread.Task) {
 	thread.pool_add_task(&cluster.worker_pool, context.allocator, heartbeat_pool_task, cluster)
 }
 
-
 process_gateway_task :: proc(task: thread.Task) {
 	task_context := (^GateWay_task_Data)(task.data)
 	cluster := task_context.cluster
@@ -204,7 +235,7 @@ process_gateway_task :: proc(task: thread.Task) {
 						cluster := (^Cluster)(task.data)
 						interval :=
 							cluster.heartbeat_interval > 0 ? cluster.heartbeat_interval : 45000
-						time.sleep(time.Duration(interval / 2) * time.Microsecond)
+						time.sleep(time.Duration(interval / 2) * time.Millisecond)
 
 						thread.pool_add_task(
 							&cluster.worker_pool,
@@ -259,23 +290,23 @@ process_gateway_task :: proc(task: thread.Task) {
 
 		switch envelope.t {
 		case "READY":
-			ready_data: Ready_Event_Data
-			if ready_bytes, err := json.marshal(envelope.d, allocator = context.temp_allocator);
-			   err == nil {
-				if json.unmarshal(ready_bytes, &ready_data) == nil {
-					cluster.session_id = ready_data.session_id
-					cluster.resume_url = ready_data.resume_url
-					fmt.printfln("Bot is ready! Session Cached: %s", cluster.session_id)
-				}
-			}
+			handle_ready(cluster, envelope.d)
+
 		case "MESSAGE_CREATE":
-			on_message_create(cluster, envelope.d)
+			handle_message_create(cluster, envelope.d)
+
 		case "GUILD_CREATE":
-			on_guild_create(cluster, envelope.d)
+			handle_guild_create(cluster, envelope.d)
+			
+		case "MESSAGE_UPDATE":
+			handle_message_update(cluster, envelope.d)
+
+		case "MESSAGE_DELETE":
+			handle_message_delete(cluster, envelope.d)
 		case:
-			fmt.printfln("unimplemented case: %s", envelope.t)
 			break
 		}
+
 	case .OP_HEARTBEAT:
 		sync.lock(&cluster.sequence_mutex)
 		current_seq := cluster.last_sequence
@@ -346,12 +377,9 @@ run_network_pump :: proc(cluster: ^Cluster) {
 			task_context.cluster = cluster
 			task_context.raw_payload = copy_payload
 
-			thread.pool_add_task(
-				&cluster.worker_pool,
-				context.allocator,
-				process_gateway_task,
-				task_context,
-			)
+			process_gateway_task(thread.Task{
+				data = task_context,
+			})
 		}
 
 		sync.lock(&cluster.outbount_mutex)
@@ -392,12 +420,50 @@ cluster_cleanup :: proc(cluster: ^Cluster) {
 	if cluster.session_id != "" do delete(cluster.session_id)
 	if cluster.resume_url != "" do delete(cluster.resume_url)
 
+	sync.lock(&cluster.cache_mutex)
+
+	for _, msg in cluster.message_cache {
+		deep_free(msg^, cluster.allocator)
+		free(msg)
+	}
+
+	delete(cluster.message_cache)
+	delete(cluster.message_order)
+
+	sync.unlock(&cluster.cache_mutex)
+
 	fmt.println("Cleaned up cluster")
 }
 
-run :: proc(token: string) {
-	cluster: Cluster
+Config :: struct {
+	token: string,
+} 
 
+new_client :: proc(config: Config) -> ^Cluster {
+	cluster := new(Cluster)
+
+	cluster.allocator = context.allocator
+	cluster.token = config.token
+
+	cluster.message_cache = make(
+		map[api.Snowflake]^api.Message,
+		allocator = context.allocator,
+	)
+
+	cluster.message_order = make(
+		[dynamic]api.Snowflake,
+		allocator = context.allocator,
+	)
+
+	cluster.event_handlers = make(
+		map[string][dynamic]Event_Listener,
+		allocator = context.allocator,
+	)
+
+	return cluster
+}
+
+run :: proc(cluster: ^Cluster) {
 	cluster.curl_handle = curl.easy_init()
 	if cluster.curl_handle == nil do return
 	defer curl.easy_cleanup(cluster.curl_handle)
@@ -415,11 +481,242 @@ run :: proc(token: string) {
 
 	cluster.is_running = true
 	cluster.received_ack = true
-	cluster.token = token
 
 	thread.pool_init(&cluster.worker_pool, context.allocator, thread_count = 4)
 	defer thread.pool_destroy(&cluster.worker_pool)
 
 	thread.pool_start(&cluster.worker_pool)
-	run_network_pump(&cluster)
+	run_network_pump(cluster)
+}
+
+parse_dispatch_data :: proc(payload: json.Value, out: ^$T) -> bool {
+	raw, err := json.marshal(payload, allocator = context.temp_allocator)
+	if err != nil do return false
+	return json.unmarshal_any(raw, out, allocator=context.temp_allocator) == nil
+}
+
+Callback_Task :: struct {
+	callback: Event_Callback,
+	payload: rawptr,
+	cleanup: proc(rawptr, runtime.Allocator),
+	allocator: runtime.Allocator
+}
+
+callback_worker :: proc(task: thread.Task) {
+	ctx := (^Callback_Task)(task.data)
+
+	defer {
+		ctx.cleanup(ctx.payload, ctx.allocator)
+		free(ctx)
+	}
+
+	ctx.callback(ctx.payload)
+}
+
+dispatch_event :: proc(cluster: ^Cluster, event_name: string, payload: $T) {
+	sync.lock(&cluster.cache_mutex)
+
+	listeners, exists := cluster.event_handlers[event_name]
+
+	if !exists {
+		sync.unlock(&cluster.cache_mutex)
+		return
+	}
+
+	local_listeners := make(
+		[]Event_Listener,
+		len(listeners),
+		context.temp_allocator,
+	)
+
+	runtime.copy_slice(local_listeners, listeners[:])
+
+	sync.unlock(&cluster.cache_mutex)
+
+	for listener in local_listeners {
+		copy_payload := new(T, allocator = cluster.allocator)
+		copy_payload^ = deep_clone(payload, cluster.allocator)
+
+		task := new(Callback_Task)
+
+		task.callback = listener.callback
+		task.payload = copy_payload
+		task.allocator = cluster.allocator
+
+		task.cleanup = proc(
+			p: rawptr,
+			allocator: runtime.Allocator,
+		) {
+			obj := (^T)(p)
+
+			deep_free(obj^, allocator)
+
+			free(obj)
+		}
+
+		thread.pool_add_task(
+			&cluster.worker_pool,
+			context.allocator,
+			callback_worker,
+			task,
+		)
+	}
+}
+
+handle_message_create :: proc(cluster: ^Cluster, payload: json.Value) {
+	msg: api.Message
+
+	if !parse_dispatch_data(payload, &msg) {
+		fmt.eprintln("Failed to parse MESSAGE_CREATE")
+		return
+	}
+
+	persistent := new(api.Message, allocator = cluster.allocator)
+	persistent^ = deep_clone(msg, cluster.allocator)
+
+	sync.lock(&cluster.cache_mutex)
+
+	cluster.message_cache[persistent.id] = persistent
+	append(&cluster.message_order, persistent.id)
+
+	if len(cluster.message_order) > MAX_CACHED_MESSAGES {
+		oldest := pop_front(&cluster.message_order)
+
+		if old_msg, ok := cluster.message_cache[oldest]; ok {
+			deep_free(old_msg^, cluster.allocator)
+			free(old_msg)
+
+			delete_key(&cluster.message_cache, oldest)
+		}
+	}
+
+	sync.unlock(&cluster.cache_mutex)
+
+	dispatch_event(cluster, "MESSAGE_CREATE", msg)
+}
+
+handle_guild_create :: proc(cluster: ^Cluster, payload: json.Value) {
+	guild: api.Guild
+
+	if !parse_dispatch_data(payload, &guild) {
+		fmt.eprintln("Failed to parse GUILD_CREATE")
+		return
+	}
+
+	dispatch_event(
+		cluster,
+		"GUILD_CREATE",
+		guild,
+	)
+}
+
+handle_ready :: proc(cluster: ^Cluster, payload: json.Value) {
+	ready: Ready_Event_Data
+
+	if !parse_dispatch_data(payload, &ready) {
+		fmt.eprintln("Failed to parse READY")
+		return
+	}
+
+	cluster.session_id = ready.session_id
+	cluster.resume_url = ready.resume_url
+
+	fmt.printfln(
+		"Bot is ready! Session Cached: %s",
+		cluster.session_id,
+	)
+}
+
+handle_message_update :: proc(cluster: ^Cluster, payload: json.Value) {
+	update: api.Message_Update_Payload
+
+	if !parse_dispatch_data(payload, &update) {
+		fmt.eprintln("Failed to parse MESSAGE_UPDATE")
+		return
+	}
+
+	sync.lock(&cluster.cache_mutex)
+
+	cached, exists := cluster.message_cache[update.id]
+	if !exists {
+		sync.unlock(&cluster.cache_mutex)
+		fmt.println("Message update received uncached message")
+		return
+	}
+
+	snapshot := deep_clone(cached^, context.temp_allocator)
+	sync.unlock(&cluster.cache_mutex)
+
+	before := deep_clone(snapshot, context.temp_allocator)
+	after  := deep_clone(snapshot, context.temp_allocator)
+
+	if value, ok := update.content.?; ok {
+		after.content = value
+	}
+
+	if value, ok := update.edited_timestamp.?; ok {
+		after.edited_timestamp = value
+	}
+
+	if value, ok := update.embeds.?; ok {
+		after.embeds = deep_clone(value, context.temp_allocator)
+	}
+
+	if value, ok := update.attachments.?; ok {
+		after.attachments = deep_clone(value, context.temp_allocator)
+	}
+
+	if value, ok := update.pinned.?; ok {
+		after.pinned = value
+	}
+
+	if value, ok := update.flags.?; ok {
+		after.flags = value
+	}
+
+	if value, ok := update.mention_everyone.?; ok {
+		after.mention_everyone = value
+	}
+
+	if value, ok := update.tts.?; ok {
+		after.tts = value
+	}
+
+	sync.lock(&cluster.cache_mutex)
+
+	deep_free(cached^, cluster.allocator)
+	cached^ = deep_clone(after, cluster.allocator)
+
+	sync.unlock(&cluster.cache_mutex)
+
+	dispatch_event(
+		cluster,
+		"MESSAGE_UPDATE",
+		api.Message_Update_Args {
+			Before = before,
+			After  = after,
+		},
+	)
+}
+
+handle_message_delete :: proc(
+	cluster: ^Cluster,
+	payload: json.Value,
+) {
+	event: api.Message_Delete_Event
+
+	if !parse_dispatch_data(payload, &event) {
+		return
+	}
+
+	sync.lock(&cluster.cache_mutex)
+
+	if cached, ok := cluster.message_cache[event.id]; ok {
+		deep_free(cached^, cluster.allocator)
+		free(cached)
+
+		delete_key(&cluster.message_cache, event.id)
+	}
+
+	sync.unlock(&cluster.cache_mutex)
 }
