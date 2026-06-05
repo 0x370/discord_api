@@ -25,27 +25,4 @@ main :: proc() {
 	defer curl.easy_cleanup(handle)
 
 	socket.run_socket(handle, opt.token)
-
-	/*
-
-	client: api.Discord_Client
-	if !api.discord_client_init(&client, AUTHORIZATION_TOKEN) {
-		fmt.eprintln("Failed to initialize custom Discord client session")
-		return
-	}
-	defer api.discord_client_destroy(&client)
-
-    bot, ok := api.get_bot(&client)
-    if ok {
-        fmt.printfln("%s %s", bot.username, bot.id)
-        fmt.println(bot)
-    }
-
-    guilds, ok1 := api.get_bot_guilds(&client)
-    if ok1 {
-        for g in guilds {
-            fmt.println(g)
-        }
-    }
-	*/
 }
