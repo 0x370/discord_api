@@ -628,7 +628,7 @@ handle_ready :: proc(cluster: ^Cluster, payload: json.Value) {
 }
 
 handle_message_update :: proc(cluster: ^Cluster, payload: json.Value) {
-	update: api.Message_Update_Payload
+	update: api.Message
 
 	if !parse_dispatch_data(payload, &update) {
 		fmt.eprintln("Failed to parse MESSAGE_UPDATE")
@@ -650,37 +650,14 @@ handle_message_update :: proc(cluster: ^Cluster, payload: json.Value) {
 	before := deep_clone(snapshot, context.temp_allocator)
 	after  := deep_clone(snapshot, context.temp_allocator)
 
-	if value, ok := update.content.?; ok {
-		after.content = value
-	}
-
-	if value, ok := update.edited_timestamp.?; ok {
-		after.edited_timestamp = value
-	}
-
-	if value, ok := update.embeds.?; ok {
-		after.embeds = deep_clone(value, context.temp_allocator)
-	}
-
-	if value, ok := update.attachments.?; ok {
-		after.attachments = deep_clone(value, context.temp_allocator)
-	}
-
-	if value, ok := update.pinned.?; ok {
-		after.pinned = value
-	}
-
-	if value, ok := update.flags.?; ok {
-		after.flags = value
-	}
-
-	if value, ok := update.mention_everyone.?; ok {
-		after.mention_everyone = value
-	}
-
-	if value, ok := update.tts.?; ok {
-		after.tts = value
-	}
+	after.content = update.content
+	after.edited_timestamp = update.edited_timestamp
+	after.embeds = deep_clone(update.embeds, context.temp_allocator)
+	after.attachments = deep_clone(update.attachments, context.temp_allocator)
+	after.pinned = update.pinned
+	after.flags = update.flags
+	after.mention_everyone = update.mention_everyone
+	after.tts = update.tts
 
 	sync.lock(&cluster.cache_mutex)
 
@@ -692,9 +669,9 @@ handle_message_update :: proc(cluster: ^Cluster, payload: json.Value) {
 	dispatch_event(
 		cluster,
 		"MESSAGE_UPDATE",
-		api.Message_Update_Args {
-			Before = before,
-			After  = after,
+		api.MessageUpdateArgs {
+			before = before,
+			after  = after,
 		},
 	)
 }
@@ -703,7 +680,7 @@ handle_message_delete :: proc(
 	cluster: ^Cluster,
 	payload: json.Value,
 ) {
-	event: api.Message_Delete_Event
+	event: api.MessageDeleteEvent
 
 	if !parse_dispatch_data(payload, &event) {
 		return

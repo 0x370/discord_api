@@ -3,7 +3,6 @@ package discord_api
 import "core:strconv"
 import "core:time"
 
-// Discord Epoch represents the first millisecond of 2015: 1420070400000
 DISCORD_EPOCH :: 1420070400000
 
 Snowflake :: string
@@ -21,20 +20,18 @@ parse_snowflake :: proc(sf: Snowflake) -> (Snowflake_Bits, bool) #optional_ok {
 	return transmute(Snowflake_Bits)val, true
 }
 
-// snowflake_to_time extracts the 42-bit relative timestamp and returns a native time.Time
-snowflake_to_time :: proc(sf: Snowflake_Bits) -> time.Time {
-	unix_ms := sf.timestamp + DISCORD_EPOCH
+snowflake_to_time :: proc(sf: Snowflake) -> time.Time {
+	snowflake_bits := parse_snowflake(sf)
 
-	// Convert milliseconds into whole seconds and remaining nanoseconds
+	unix_ms := snowflake_bits.timestamp + DISCORD_EPOCH
+
 	seconds := i64(unix_ms / 1000)
 	nanoseconds := i64((unix_ms % 1000) * 1_000_000)
 
 	return time.unix(seconds, nanoseconds)
 }
 
-// time_to_snowflake builds a template Snowflake for pagination or query limits
 time_to_snowflake :: proc(t: time.Time) -> Snowflake_Bits {
-	// Get total unix nanoseconds from the Time struct
 	total_ns := time.to_unix_nanoseconds(t)
 	unix_ms := total_ns / 1_000_000
 
