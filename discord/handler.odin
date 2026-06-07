@@ -491,8 +491,18 @@ run :: proc(cluster: ^Cluster) {
 
 parse_dispatch_data :: proc(payload: json.Value, out: ^$T) -> bool {
 	raw, err := json.marshal(payload, allocator = context.temp_allocator)
-	if err != nil do return false
-	return json.unmarshal_any(raw, out, allocator=context.temp_allocator) == nil
+	if err != nil {
+		fmt.printfln("Parse error: %s", err)
+		return false
+	}
+	
+	err1 := json.unmarshal_any(raw, out, allocator = context.temp_allocator)
+	if err1 != nil {
+		fmt.printfln("Parse error: %s", err1)
+		return false
+	}
+
+	return true
 }
 
 Callback_Task :: struct {

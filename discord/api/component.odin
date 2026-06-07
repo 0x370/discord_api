@@ -8,7 +8,7 @@ MessageComponent :: struct {
 ActionRowComponent :: struct {
 	type:       ComponentType,
 	id:         int,
-	components: []MessageComponent,
+	components: []Component,
 }
 
 ButtonComponent :: struct {
@@ -31,6 +31,7 @@ StringSelectComponent :: struct {
 	placeholder: string,
 	min_values:  int,
 	max_values:  int,
+	required:    bool,
 	disabled:    bool,
 }
 
@@ -64,7 +65,6 @@ TextInputComponent :: struct {
 	id:          int,
 	custom_id:   string,
 	style:       TextInputStyle,
-	label:       string,
 	min_length:  int,
 	max_length:  int,
 	required:    bool,
@@ -115,7 +115,7 @@ SeparatorComponent :: struct {
 ContainerComponent :: struct {
 	type:         ComponentType,
 	id:           int,
-	components:   []MessageComponent,
+	components:   []Component,
 	accent_color: int,
 	spoiler:      bool,
 }
@@ -123,10 +123,9 @@ ContainerComponent :: struct {
 SectionComponent :: struct {
 	type:       ComponentType,
 	id:         int,
-	components: []MessageComponent,
-	accessory:  MessageComponent,
+	components: []Component,
+	accessory:  []Component,
 }
-
 UnfurledMediaItem :: struct {
 	url: string,
 }

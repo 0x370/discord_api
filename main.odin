@@ -15,6 +15,8 @@ Options :: struct {
 on_msg :: proc(data: rawptr) {
 	msg := (^api.Message)(data)
 	fmt.printfln("on_msg: %s", msg.content)
+
+	fmt.println(msg)
 }
 
 main :: proc() {

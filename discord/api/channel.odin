@@ -17,6 +17,7 @@ Channel :: struct {
 	icon:                               string,
 	owner_id:                           Snowflake,
 	application_id:                     Snowflake,
+	managed:                            bool,
 	parent_id:                          Snowflake,
 	last_pin_timestamp:                 string,
 	rtc_region:                         string,

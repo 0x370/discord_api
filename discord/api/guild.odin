@@ -48,6 +48,7 @@ Guild :: struct {
 	owner:                         bool,
 	owner_id:                      Snowflake,
 	permissions:                   string,
+	region:                        string,
 	afk_channel_id:                Snowflake,
 	afk_timeout:                   int,
 	widget_enabled:                bool,
@@ -81,6 +82,14 @@ Guild :: struct {
 	stickers:                      []Sticker,
 	premium_progress_bar_enabled:  bool,
 	safety_alerts_channel_id:      Snowflake,
+	incidents_data:                IncidentsData,
+}
+
+IncidentsData :: struct {
+	invites_disabled_until: string,
+	dms_disabled_until:     string,
+	dm_spam_detected_at:    string,
+	raid_detected_at:       string,
 }
 
 GuildPreview :: struct {
@@ -112,6 +121,7 @@ GuildMember :: struct {
 	permissions:                  string,
 	communication_disabled_until: string,
 	avatar_decoration_data:       AvatarDecorationData,
+	collectibles:                 Collectibles,
 }
 
 Role :: struct {
@@ -188,6 +198,9 @@ BulkBanResponse :: struct {
 	failed_users: []Snowflake,
 }
 
+integrationExpireBehavior :: struct {}
+integrationApplication :: struct {}
+
 Integration :: struct {
 	id:                  Snowflake,
 	name:                string,
@@ -239,12 +252,15 @@ OnboardingPrompt :: struct {
 }
 
 OnboardingPromptOption :: struct {
-	id:          Snowflake,
-	channel_ids: []Snowflake,
-	role_ids:    []Snowflake,
-	emoji:       Emoji,
-	title:       string,
-	description: string,
+	id:              Snowflake,
+	channel_ids:     []Snowflake,
+	role_ids:        []Snowflake,
+	emoji:           Emoji,
+	emoji_id:        Snowflake,
+	emoji_name:      string,
+	emoji_animatied: bool,
+	title:           string,
+	description:     string,
 }
 
 PartialUser :: struct {
@@ -285,3 +301,22 @@ OnboardingPromptType :: enum i32 {
 SystemChannelFlags :: distinct u64
 GuildMemberFlags :: distinct u64
 RoleFlags :: distinct u64
+
+
+SUPPRESS_JOIN_NOTIFICATIONS :: SystemChannelFlags(1 << 0)
+SUPPRESS_PREMIUM_SUBSCRIPTIONS :: SystemChannelFlags(1 << 1)
+SUPPRESS_GUILD_REMINDER_NOTIFICATIONS :: SystemChannelFlags(1 << 2)
+SUPPRESS_JOIN_NOTIFICATION_REPLIES :: SystemChannelFlags(1 << 3)
+SUPPRESS_ROLE_SUBSCRIPTION_PURCHASE_NOTIFICATIONS :: SystemChannelFlags(1 << 4)
+SUPPRESS_ROLE_SUBSCRIPTION_PURCHASE_NOTIFICATION_REPLIES :: SystemChannelFlags(1 << 5)
+
+DID_REJOIN :: GuildMemberFlags(1 << 0)
+COMPLETED_ONBOARDING :: GuildMemberFlags(1 << 1)
+BYPASSES_VERIFICATION :: GuildMemberFlags(1 << 2)
+STARTED_ONBOARDING :: GuildMemberFlags(1 << 3)
+IS_GUEST :: GuildMemberFlags(1 << 4)
+STARTED_HOME_ACTIONS :: GuildMemberFlags(1 << 5)
+COMPLETED_HOME_ACTIONS :: GuildMemberFlags(1 << 6)
+AUTOMOD_QUARANTINED_USERNAME :: GuildMemberFlags(1 << 7)
+DM_SETTINGS_UPSELL_ACKNOWLEDGED :: GuildMemberFlags(1 << 9)
+AUTOMOD_QUARANTINED_GUILD_TAG :: GuildMemberFlags(1 << 10)

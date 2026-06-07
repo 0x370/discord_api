@@ -7,8 +7,8 @@ Message :: struct {
 	author:                 User,
 	member:                 GuildMember,
 	content:                string,
-	timestamp:              Snowflake,
-	edited_timestamp:       Snowflake,
+	timestamp:              string,
+	edited_timestamp:       string,
 	tts:                    bool,
 	mention_everyone:       bool,
 	mentions:               []User,
@@ -20,13 +20,14 @@ Message :: struct {
 	nonce:                  string,
 	pinned:                 bool,
 	webhook_id:             Snowflake,
-	type:                   int,
+	type:                   MessageTypes,
 	activity:               MessageActivity,
 	application:            Application,
 	application_id:         Snowflake,
+	flags:                  MessageFlags,
 	message_reference:      MessageReference,
-	referenced_message:     ^Message,
-	flags:                  u64,
+	message_snapshots:      []MessageSnapshot,
+	referenced_message:     []Message,
 	interaction_metadata:   MessageInteractionMetadata,
 	thread:                 Channel,
 	components:             []MessageComponent,
@@ -37,12 +38,11 @@ Message :: struct {
 	resolved:               ResolvedData,
 	poll:                   Poll,
 	call:                   MessageCall,
-	message_snapshots:      []MessageSnapshot,
 	shared_client_theme:    SharedClientTheme,
 }
 
 MessageReference :: struct {
-	type:               int,
+	type:               MessageReferenceTypes,
 	message_id:         Snowflake,
 	channel_id:         Snowflake,
 	guild_id:           Snowflake,
@@ -82,7 +82,7 @@ ReactionCountDetails :: struct {
 }
 
 MessageActivity :: struct {
-	type:     int,
+	type:     MessageActivityTypes,
 	party_id: string,
 }
 
@@ -94,7 +94,7 @@ MessageCall :: struct {
 ChannelMention :: struct {
 	id:       Snowflake,
 	guild_id: Snowflake,
-	type:     int,
+	type:     ChannelType,
 	name:     string,
 }
 
@@ -112,7 +112,7 @@ MessageInteractionMetadata :: struct {
 	authorizing_integration_owners:  map[string]Snowflake,
 	original_response_message_id:    Snowflake,
 	interacted_message_id:           Snowflake,
-	triggering_interaction_metadata: ^MessageInteractionMetadata,
+	triggering_interaction_metadata: []MessageInteractionMetadata,
 	target_user:                     User,
 	target_message_id:               Snowflake,
 }
@@ -120,7 +120,7 @@ MessageInteractionMetadata :: struct {
 Poll :: struct {
 	question:          PollMedia,
 	answers:           []PollAnswer,
-	expiry:            Snowflake,
+	expiry:            string,
 	allow_multiselect: bool,
 	layout_type:       int,
 	results:           PollResults,
@@ -157,17 +157,94 @@ ResolvedData :: struct {
 }
 
 SharedClientTheme :: struct {
-	primary_color:   u32,
-	gradient_preset: int,
+	colors:         []string,
+	gradient_angle: int,
+	base_mix:       int,
+	base_theme:     BaseThemeTypes,
+}
+
+BaseThemeTypes :: enum i32 {
+	UNSET = 0,
+	DARK,
+	LIGHT,
+	DARKER,
+	MIDNIGHT,
 }
 
 MessageUpdateArgs :: struct {
 	before: Message,
-	after: Message,
+	after:  Message,
 }
 
 MessageDeleteEvent :: struct {
-	id: Snowflake,
+	id:         Snowflake,
 	channel_id: Snowflake,
-	guild_id: Snowflake,
+	guild_id:   Snowflake,
+}
+
+MessageActivityTypes :: enum i32 {
+	JOIN = 1,
+	SPECTATE,
+	LISTEN,
+	JOIN_REQUEST,
+}
+
+MessageFlags :: distinct u64
+CROSSPOSTED :: MessageFlags(1 << 0)
+IS_CROSSPOST :: MessageFlags(1 << 1)
+SUPPRESS_EMBEDS :: MessageFlags(1 << 2)
+SOURCE_MESSAGE_DELETED :: MessageFlags(1 << 3)
+URGENT :: MessageFlags(1 << 4)
+HAS_THREAD :: MessageFlags(1 << 5)
+EMPHEMERAL :: MessageFlags(1 << 6)
+LOADING :: MessageFlags(1 << 7)
+FAILED_TO_MENTION_SOME_ROLES_IN_THREAD :: MessageFlags(1 << 8)
+SUPPRESS_NOTIFICATIONS :: MessageFlags(1 << 12)
+IS_VOICE_MESSAGE :: MessageFlags(1 << 13)
+HAS_SNAPSHOT :: MessageFlags(1 << 14)
+IS_COMPONENTS_V2 :: MessageFlags(1 << 15)
+
+MessageTypes :: enum {
+	DEFAULT = 0,
+	RECIPIENT_ADD,
+	RECIPIENT_REMOVE,
+	CALL,
+	CHANNEL_NAME_CHANGE,
+	CHANNEL_ICON_CHANGE,
+	CHANNEL_PINNED_MESSAGE,
+	USER_JOIN,
+	GUILD_BOOST,
+	GUILD_BOOST_TIER_1,
+	GUILD_BOOST_TIER_2,
+	GUILD_BOOST_TIER_3,
+	CHANNEL_FOLLOW_ADD,
+	GUILD_DISCOVERY_DISQUALIFIED,
+	GUILD_DISCOVERY_REQUALIFIED,
+	GUILD_DISCOVERY_GRACE_PERIOD_INITIAL_WARNING,
+	GUILD_DISCOVERY_GRACE_PERIOD_FINAL_WARNING,
+	THREAD_CREATED,
+	REPLY,
+	CHAT_INPUT_COMMAND,
+	THREAD_STARTER_MESSAGE,
+	GUILD_INVITE_REMINDER,
+	CONTEXT_MENU_COMMAND,
+	AUTO_MODERATION_ACTION,
+	ROLE_SUBSCRIPTION_PURCHASE,
+	INTERACTION_PREMIUM_UPSELL,
+	STAGE_START,
+	STAGE_END,
+	STAGE_SPEAKER,
+	STAGE_TOPIC = 31,
+	GUILD_APPLICATION_PREMIUM_SUBSCRIPTION,
+	GUILD_INCIDENT_ALERT_MODE_ENABLED = 36,
+	GUILD_INCIDENT_ALERT_MODE_DISABLED,
+	GUILD_INCIDENT_REPORT_RAID,
+	GUILD_INCIDENT_REPORT_FALSE_ALARM,
+	PURCHASE_NOTIFICATION = 44,
+	POLL_RESULT = 46,
+}
+
+MessageReferenceTypes :: enum i32 {
+	DEFAULT = 0,
+	FORWARD,
 }
