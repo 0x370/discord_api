@@ -105,6 +105,13 @@ MessageInteraction :: struct {
 	member:  GuildMember,
 }
 
+AllowedMentions :: struct {
+	parse:       []string,
+	roles:       []Snowflake,
+	users:       []Snowflake,
+	replied_user: bool,
+}
+
 InteractionCallbackData :: struct {
 	tts:              bool,
 	content:          string,
