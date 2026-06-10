@@ -252,6 +252,7 @@ _discord_request :: proc(
 	if g.data != nil {
 		body_slice = ([^]byte)(g.data)[:g.len]
 	}
+
 	return Http_Response{status_code = http_code, body = body_slice, 	perform_time_ns = i64(time.diff(perform_start, perform_end))}, true
 }
 
@@ -269,7 +270,7 @@ discord_client_init :: proc(client: ^Discord_Client, token: string) -> bool {
 
 	curl.easy_setopt(client.curl_handle, .HTTPHEADER,     client.headers)
 	curl.easy_setopt(client.curl_handle, .WRITEFUNCTION,  rawptr(write_callback))
-	curl.easy_setopt(client.curl_handle, .HTTP_VERSION,   i32(curl.HTTP_VERSION_1_1))
+	//curl.easy_setopt(client.curl_handle, .HTTP_VERSION,   i32(curl.HTTP_VERSION_1_1))
 	curl.easy_setopt(client.curl_handle, .FOLLOWLOCATION, i32(1))
 
 	return true
