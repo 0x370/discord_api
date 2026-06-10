@@ -54,6 +54,14 @@ in servers where the bot is present.
 > **Note**: There are no unit tests in this project. Tests would use `package_test` files
 > and be run via `odin test .` if they existed.
 
+## Token Limits
+
+Long conversations may run out of tokens. To avoid losing progress:
+- **Commit early, commit often**: `git add -A && git commit -m "message"`
+- Push only when explicitly asked
+- If you see a warning about tokens running out, commit everything immediately and tell the user
+- The AGENTS.md file is the canonical source of truth — update it as the conversation evolves
+
 ## Project Structure
 
 ```
