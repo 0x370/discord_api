@@ -12,14 +12,11 @@ odin build . -o:speed
 # Run the project (requires a token file)
 odin run . -- --token "$(cat token)"
 
-# Run the project (direct)
-./discord_api --token "$(cat token)"
+# Run with sharding (e.g., shard 0 of 2)
+./discord_api --token "$(cat token)" --shard-id 0 --shards 2
 
 # Test the bot from the repo root using the local 'token' file
 cd "$(git rev-parse --show-toplevel)" && odin run . -- --token "$(cat token)"
-
-# Format all Odin files
-odin fmt .
 
 # Check for compilation errors (no output = success)
 odin build . -vet -strict-style
@@ -48,12 +45,6 @@ along with the necessary bot permissions.
 # https://discord.com/api/oauth2/authorize?client_id=CLIENT_ID&scope=bot+applications.commands&permissions=0
 ```
 
-Without the `applications.commands` scope, users will not be able to see or use slash commands
-in servers where the bot is present.
-
-> **Note**: There are no unit tests in this project. Tests would use `package_test` files
-> and be run via `odin test .` if they existed.
-
 ## Token Limits
 
 Long conversations may run out of tokens. To avoid losing progress:
@@ -66,27 +57,44 @@ Long conversations may run out of tokens. To avoid losing progress:
 
 ```
 ./
-├── main.odin              # Entry point
+├── main.odin              # Entry point & CLI flag parsing
 ├── discord/               # Core library package
-│   ├── handler.odin       # Gateway connection, event dispatch, cluster
+│   ├── handler.odin       # Gateway connection, event dispatch, session resuming
 │   ├── helper.odin        # deep_clone, deep_free (reflection-based)
 │   └── api/               # Discord API types package
-│       ├── handler.odin   # REST client (discord_get, discord_request, discord_post, etc.)
+│       ├── handler.odin   # REST client with bucket-based rate limiting
 │       ├── message.odin
-│       ├── guild.odin
+│       ├── guild.odin     # Includes member_count for accurate dashboard
 │       ├── channel.odin
 │       ├── user.odin
 │       ├── embed.odin
 │       ├── component.odin
-│       ├── attachment.odin
-│       ├── emoji.odin
-│       ├── sticker.odin
 │       ├── application.odin
 │       ├── snowflake.odin
-│       └── handler.odin
+│       └── gateway.odin   # Gateway response types (sharding info, etc.)
 ├── token                  # Bot token file (gitignored)
 └── discord_api*           # Compiled binary (gitignored)
 ```
+
+## Features
+
+### Dashboard
+A real-time terminal dashboard that renders every second, providing:
+- **Health**: CPU/Memory usage, Worker threads, Heartbeat latency (Avg/Last).
+- **Gateway**: Shard ID, Gateway Status (OK/ACK), Session ID, Reconnection status.
+- **Metrics**: Servers, Users (total member count), Event Rate, Messages Seen, Commands Run, REST API Calls.
+- **Resources**: Message Cache size, Outbound Queue, Identify rate limit (24h).
+
+### Sharding
+Supports internal sharding configuration via CLI:
+- `--shard-id`: The ID of the current instance.
+- `--shards`: The total number of shards.
+- Automatic fetching of recommended shard count from Discord if `--shards` is omitted.
+
+### Resilience
+- **Rate Limiting**: Preemptive bucket-based rate limiter for REST requests.
+- **Session Resuming**: Automatically saves `session_id` and `last_sequence` to resume sessions (`OP_RESUME`) after disconnects.
+- **Exponential Backoff**: Gradual reconnection attempts when the Gateway is unreachable.
 
 ## Package Layout
 
@@ -118,7 +126,6 @@ import api "discord/api"
 
 ### Formatting
 
-- Run `odin fmt .` before committing.
 - Use tabs for indentation (Odin standard).
 - Align struct fields and enum values by type/name when practical.
 - Trailing commas on multi-line struct/compound literals.
@@ -182,6 +189,7 @@ my_func :: proc(arg: string) -> (result: T, ok: bool) #optional_ok {
 - Use `new(T)` for heap-allocated structs, `make(T, ...)` for dynamic types.
 - Free with `delete()` for strings/slices/maps, `free()` for pointers.
 - Use `deep_clone` / `deep_free` (reflection-based from `helper.odin`) for complex nested types.
+- **Cloning**: Use `strings.clone()` when moving Gateway strings to persistent fields in the `Client` struct.
 
 ### Concurrency
 
@@ -189,6 +197,7 @@ my_func :: proc(arg: string) -> (result: T, ok: bool) #optional_ok {
 - Lock/unlock pairs: lock at start, unlock before function exit.
 - Use `thread.Pool` (`core:thread`) for background work.
 - Use `proc(task: thread.Task)` as thread pool task signature.
+- **Worker Pool**: All Gateway events and Interactions are dispatched to a thread pool to keep the Gateway loop responsive.
 
 ### Control Flow
 
@@ -210,3 +219,7 @@ my_func :: proc(arg: string) -> (result: T, ok: bool) #optional_ok {
 - Only use comments for non-obvious intent, not for what the code does.
 - Struct field comments explaining Discord API mapping are acceptable.
 - Avoid trailing comments on code lines.
+
+## References
+
+- [Discord Developer Reference](https://docs.discord.com/developers/reference) — canonical API docs for all gateway events, REST endpoints, and object schemas. Refer to this when implementing or modifying Discord API types and behavior.

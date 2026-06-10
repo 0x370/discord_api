@@ -113,17 +113,17 @@ AllowedMentions :: struct {
 }
 
 InteractionCallbackData :: struct {
-	tts:              bool,
-	content:          string,
-	embeds:           []Embed,
-	allowed_mentions: AllowedMentions,
-	flags:            int,
-	components:       []Component,
-	attachments:      []Attachment,
-	poll:             PollCreateRequest,
+	tts:              Maybe(bool) `json:"tts,omitempty"`,
+	content:          Maybe(string) `json:"content,omitempty"`,
+	embeds:           []Embed `json:"embeds,omitempty"`,
+	allowed_mentions: Maybe(AllowedMentions) `json:"allowed_mentions,omitempty"`,
+	flags:            Maybe(int) `json:"flags,omitempty"`,
+	components:       []Component `json:"components,omitempty"`,
+	attachments:      []Attachment `json:"attachments,omitempty"`,
+	poll:             Maybe(PollCreateRequest) `json:"poll,omitempty"`,
 }
 
 InteractionResponse :: struct {
-	type: InteractionCallbackType,
-	data: InteractionCallbackData,
+	type: InteractionCallbackType `json:"type"`,
+	data: Maybe(InteractionCallbackData) `json:"data,omitempty"`,
 }

@@ -75,6 +75,7 @@ Guild :: struct {
 	public_updates_channel_id:     Snowflake,
 	max_video_channel_users:       int,
 	max_stage_video_channel_users: int,
+	member_count:                  int,
 	approximate_member_count:      int,
 	approximate_presence_count:    int,
 	welcome_screen:                WelcomeScreen,
