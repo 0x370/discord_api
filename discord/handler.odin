@@ -203,7 +203,10 @@ process_gateway_task :: proc(task: thread.Task) {
 	defer free(task_context)
 
 	envelope: Gateway_Payload
-	if json.unmarshal(task_context.raw_payload, &envelope, allocator = context.temp_allocator) != nil do return
+	alloc := context.temp_allocator
+	if json.unmarshal(task_context.raw_payload, &envelope, allocator = alloc) != nil do return
+	defer delete(envelope.t, alloc)
+	defer json.destroy_value(envelope.d, alloc)
 
 	if seq, has_seq := envelope.s.?; has_seq {
 		sync.lock(&cluster.sequence_mutex)
@@ -593,10 +596,9 @@ handle_message_create :: proc(cluster: ^Cluster, payload: json.Value) {
 		oldest := pop_front(&cluster.message_order)
 
 		if old_msg, ok := cluster.message_cache[oldest]; ok {
+			delete_key(&cluster.message_cache, oldest)
 			deep_free(old_msg^, cluster.allocator)
 			free(old_msg)
-
-			delete_key(&cluster.message_cache, oldest)
 		}
 	}
 

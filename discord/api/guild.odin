@@ -124,10 +124,17 @@ GuildMember :: struct {
 	collectibles:                 Collectibles,
 }
 
+RoleColors :: struct {
+	primary_color:   int,
+	secondary_color: int,
+	tertiary_color:  int,
+}
+
 Role :: struct {
 	id:            Snowflake,
 	name:          string,
 	color:         int,
+	colors:        RoleColors,
 	hoist:         bool,
 	icon:          string,
 	unicode_emoji: string,
@@ -301,6 +308,8 @@ OnboardingPromptType :: enum i32 {
 SystemChannelFlags :: distinct u64
 GuildMemberFlags :: distinct u64
 RoleFlags :: distinct u64
+
+IN_PROMPT :: RoleFlags(1 << 0)
 
 
 SUPPRESS_JOIN_NOTIFICATIONS :: SystemChannelFlags(1 << 0)

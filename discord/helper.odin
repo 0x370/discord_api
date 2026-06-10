@@ -135,6 +135,8 @@ deep_free_any :: proc(a: any, allocator: runtime.Allocator) {
 				deep_free_any(elem_any, allocator)
 			}
 			runtime.mem_free(slice_ptr.data, allocator)
+			slice_ptr.data = nil
+			slice_ptr.len = 0
 		}
 	case reflect.Type_Info_Pointer:
 		ptr := (^rawptr)(a.data)

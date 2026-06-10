@@ -7,7 +7,6 @@ Embed :: struct {
 	url:         string,
 	timestamp:   string,
 	color:       int,
-
 	footer:      EmbedFooter,
 	image:       EmbedImage,
 	thumbnail:   EmbedThumbnail,
@@ -22,58 +21,41 @@ Embed :: struct {
 
 EmbedFooter :: struct {
 	text:           string,
-
 	icon_url:       string,
 	proxy_icon_url: string,
 }
 
 EmbedImage :: struct {
 	url:                 string,
-
 	proxy_url:           string,
-
 	height:              int,
 	width:               int,
-
 	content_type:        string,
-
 	placeholder:         string,
 	placeholder_version: int,
-
 	description:         string,
-
 	flags:               EmbedFlags,
 }
 
 EmbedThumbnail :: struct {
 	url:                 string,
-
 	proxy_url:           string,
-
 	height:              int,
 	width:               int,
-
 	content_type:        string,
-
 	placeholder:         string,
 	placeholder_version: int,
 }
 
 EmbedVideo :: struct {
 	url:                 string,
-
 	proxy_url:           string,
-
 	height:              int,
 	width:               int,
-
 	content_type:        string,
-
 	placeholder:         string,
 	placeholder_version: int,
-
 	description:         string,
-
 	flags:               EmbedFlags,
 }
 
@@ -84,9 +66,7 @@ EmbedProvider :: struct {
 
 EmbedAuthor :: struct {
 	name: string,
-
 	url:            string,
-
 	icon_url:       string,
 	proxy_icon_url: string,
 }
