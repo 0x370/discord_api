@@ -15,6 +15,9 @@ odin run . -- --token "$(cat token)"
 # Run the project (direct)
 ./discord_api --token "$(cat token)"
 
+# Test the bot from the repo root using the local 'token' file
+cd "$(git rev-parse --show-toplevel)" && odin run . -- --token "$(cat token)"
+
 # Format all Odin files
 odin fmt .
 
@@ -34,6 +37,20 @@ odin run /path/to/file.odin
 odin help
 ```
 
+## Bot Invite
+
+The bot requires the `applications.commands` OAuth2 scope for slash commands to work.
+When generating an invite URL in the Discord Developer Portal, ensure this scope is selected
+along with the necessary bot permissions.
+
+```bash
+# Example invite URL format (replace CLIENT_ID):
+# https://discord.com/api/oauth2/authorize?client_id=CLIENT_ID&scope=bot+applications.commands&permissions=0
+```
+
+Without the `applications.commands` scope, users will not be able to see or use slash commands
+in servers where the bot is present.
+
 > **Note**: There are no unit tests in this project. Tests would use `package_test` files
 > and be run via `odin test .` if they existed.
 
@@ -46,7 +63,7 @@ odin help
 │   ├── handler.odin       # Gateway connection, event dispatch, cluster
 │   ├── helper.odin        # deep_clone, deep_free (reflection-based)
 │   └── api/               # Discord API types package
-│       ├── handler.odin   # REST client (discord_get, discord_fetch)
+│       ├── handler.odin   # REST client (discord_get, discord_request, discord_post, etc.)
 │       ├── message.odin
 │       ├── guild.odin
 │       ├── channel.odin

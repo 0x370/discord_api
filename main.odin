@@ -12,13 +12,6 @@ Options :: struct {
 	token: string `args:"name=token,required" usage:"Your discord bot token"`
 }
 
-on_msg :: proc(data: rawptr) {
-	msg := (^api.Message)(data)
-	fmt.printfln("on_msg: %s", msg.content)
-
-	fmt.println(msg)
-}
-
 main :: proc() {
 	opt: Options
 	flags.parse_or_exit(&opt, os.args, .Unix)
@@ -29,7 +22,19 @@ main :: proc() {
 	}
 	defer curl.global_cleanup()
 
-	client := discord.new_client({token = opt.token})
-	discord.on(client, "MESSAGE_CREATE", on_msg)
-	discord.run(client)
+	client: discord.Client
+	if !discord.client_init(&client, {token = opt.token}) {
+		fmt.eprintln("Failed to initialize Discord client")
+		return
+	}
+	defer discord.client_destroy(&client)
+
+	discord.on_command(&client, "echo", "Echo back your message", proc(ctx: ^discord.Command_Context) {
+		msg := discord.get_string(ctx, "message")
+		discord.respond(ctx, msg)
+	},
+		{type = .STRING, name = "message", description = "The message to echo back", required = true},
+	)
+
+	discord.client_run(&client)
 }
