@@ -1,12 +1,5 @@
 package discord_api
 
-AllowedMentions :: struct {
-	parse:       []string,
-	roles:       []Snowflake,
-	users:       []Snowflake,
-	replied_user: bool,
-}
-
 Message :: struct {
 	id:                     Snowflake,
 	channel_id:             Snowflake,
