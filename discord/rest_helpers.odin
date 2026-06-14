@@ -10,7 +10,12 @@ bulk_overwrite_commands :: proc(client: ^Client) -> bool {
 }
 
 bulk_overwrite_guild_commands :: proc(client: ^Client, guild_id: api.Snowflake) -> bool {
-	return _bulk_overwrite(client, "/applications/%s/guilds/%s/commands", client.application_id, guild_id)
+	return _bulk_overwrite(
+		client,
+		"/applications/%s/guilds/%s/commands",
+		client.application_id,
+		guild_id,
+	)
 }
 
 _bulk_overwrite :: proc(client: ^Client, endpoint_fmt: string, args: ..any) -> bool {
@@ -38,7 +43,11 @@ _bulk_overwrite :: proc(client: ^Client, endpoint_fmt: string, args: ..any) -> b
 			fmt.printfln("Bulk overwrote %d commands (status %d)", len(commands), resp.status_code)
 			return true
 		}
-		fmt.eprintfln("Failed to bulk overwrite commands: HTTP %d: %s", resp.status_code, string(resp.body))
+		fmt.eprintfln(
+			"Failed to bulk overwrite commands: HTTP %d: %s",
+			resp.status_code,
+			string(resp.body),
+		)
 		return false
 	}
 	fmt.eprintln("Failed to bulk overwrite commands: network error")
@@ -46,11 +55,26 @@ _bulk_overwrite :: proc(client: ^Client, endpoint_fmt: string, args: ..any) -> b
 }
 
 delete_global_command :: proc(client: ^Client, command_id: api.Snowflake) -> bool {
-	return _delete_command(client, "/applications/%s/commands/%s", client.application_id, command_id)
+	return _delete_command(
+		client,
+		"/applications/%s/commands/%s",
+		client.application_id,
+		command_id,
+	)
 }
 
-delete_guild_command :: proc(client: ^Client, guild_id: api.Snowflake, command_id: api.Snowflake) -> bool {
-	return _delete_command(client, "/applications/%s/guilds/%s/commands/%s", client.application_id, guild_id, command_id)
+delete_guild_command :: proc(
+	client: ^Client,
+	guild_id: api.Snowflake,
+	command_id: api.Snowflake,
+) -> bool {
+	return _delete_command(
+		client,
+		"/applications/%s/guilds/%s/commands/%s",
+		client.application_id,
+		guild_id,
+		command_id,
+	)
 }
 
 _delete_command :: proc(client: ^Client, endpoint_fmt: string, args: ..any) -> bool {
@@ -83,24 +107,41 @@ get_global_commands :: proc(client: ^Client) -> ([]api.ApplicationCommand, bool)
 	return api.discord_request([]api.ApplicationCommand, &client.rest_client, endpoint)
 }
 
-edit_original_response :: proc(client: ^Client, interaction_token: string, content: string) -> bool {
-	data := api.InteractionCallbackData{content = content}
+edit_original_response :: proc(
+	client: ^Client,
+	interaction_token: string,
+	content: string,
+) -> bool {
+	data := api.InteractionCallbackData {
+		content = content,
+	}
 	return _patch_webhook(client, interaction_token, "/messages/@original", data)
 }
 
 delete_original_response :: proc(client: ^Client, interaction_token: string) -> bool {
-	endpoint := fmt.tprintf("/webhooks/%s/%s/messages/@original", client.application_id, interaction_token)
+	endpoint := fmt.tprintf(
+		"/webhooks/%s/%s/messages/@original",
+		client.application_id,
+		interaction_token,
+	)
 	resp, ok := api.discord_delete(&client.rest_client, endpoint)
 	if ok do delete(resp.body)
 	return ok
 }
 
 create_followup :: proc(client: ^Client, interaction_token: string, content: string) -> bool {
-	data := api.InteractionCallbackData{content = content}
+	data := api.InteractionCallbackData {
+		content = content,
+	}
 	return _post_webhook(client, interaction_token, data)
 }
 
-_patch_webhook :: proc(client: ^Client, interaction_token: string, suffix: string, data: api.InteractionCallbackData) -> bool {
+_patch_webhook :: proc(
+	client: ^Client,
+	interaction_token: string,
+	suffix: string,
+	data: api.InteractionCallbackData,
+) -> bool {
 	body, err := json.marshal(data, allocator = context.temp_allocator)
 	if err != nil {
 		fmt.eprintfln("Failed to marshal webhook payload: %v", err)
@@ -112,7 +153,11 @@ _patch_webhook :: proc(client: ^Client, interaction_token: string, suffix: strin
 	return ok
 }
 
-_post_webhook :: proc(client: ^Client, interaction_token: string, data: api.InteractionCallbackData) -> bool {
+_post_webhook :: proc(
+	client: ^Client,
+	interaction_token: string,
+	data: api.InteractionCallbackData,
+) -> bool {
 	body, err := json.marshal(data, allocator = context.temp_allocator)
 	if err != nil {
 		fmt.eprintfln("Failed to marshal webhook payload: %v", err)

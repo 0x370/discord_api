@@ -15,27 +15,27 @@ Ready_Application :: struct {
 }
 
 Ready_Event_Data :: struct {
-	session_id:  string             `json:"session_id"`,
-	resume_url:  string             `json:"resume_url"`,
-	application: Ready_Application  `json:"application"`,
+	session_id:  string `json:"session_id"`,
+	resume_url:  string `json:"resume_url"`,
+	application: Ready_Application `json:"application"`,
 }
 
 Gateway_Payload :: struct {
-	op: Opcodes       `json:"op"`,
-	d:  json.Value    `json:"d"`,
-	s:  Maybe(int)    `json:"s"`,
+	op: Opcodes `json:"op"`,
+	d:  json.Value `json:"d"`,
+	s:  Maybe(int) `json:"s"`,
 	t:  Maybe(string) `json:"t"`,
 }
 
 Resume_Payload :: struct {
-	op: Opcodes     `json:"op"`,
+	op: Opcodes `json:"op"`,
 	d:  Resume_Data `json:"d"`,
 }
 
 Resume_Data :: struct {
 	token:      string `json:"token"`,
 	session_id: string `json:"session_id"`,
-	seq:        int    `json:"seq"`,
+	seq:        int `json:"seq"`,
 }
 
 Gateway_Task_Data :: struct {
@@ -48,20 +48,20 @@ Hello_Data :: struct {
 }
 
 Heartbeat_Payload :: struct {
-	op: Opcodes   `json:"op"`,
+	op: Opcodes `json:"op"`,
 	d:  Maybe(int) `json:"d"`,
 }
 
 Identify_Payload :: struct {
-	op: Opcodes       `json:"op"`,
+	op: Opcodes `json:"op"`,
 	d:  Identify_Data `json:"d"`,
 }
 
 Identify_Data :: struct {
-	token:      string              `json:"token"`,
+	token:      string `json:"token"`,
 	intents:    Gateway_Intents_Set `json:"intents"`,
 	properties: Identify_Properties `json:"properties"`,
-	shard:      [2]int              `json:"shard"`,
+	shard:      [2]int `json:"shard"`,
 }
 
 Identify_Properties :: struct {
@@ -77,7 +77,12 @@ process_gateway_task :: proc(task: thread.Task) {
 	defer free(task_data)
 
 	payload: Gateway_Payload
-	err := json.unmarshal(task_data.raw_payload, &payload, json.DEFAULT_SPECIFICATION, allocator = context.temp_allocator)
+	err := json.unmarshal(
+		task_data.raw_payload,
+		&payload,
+		json.DEFAULT_SPECIFICATION,
+		allocator = context.temp_allocator,
+	)
 	if err != nil {
 		fmt.eprintfln("Failed to parse gateway payload: %v", err)
 		return
@@ -111,7 +116,7 @@ process_gateway_task :: proc(task: thread.Task) {
 	case .OP_HEARTBEAT_ACK:
 		handle_op_heartbeat_ack(client)
 	case .OP_IDENTIFY, .OP_RESUME:
-		// no-op: we sent these, discord doesn't reply to them with data
+	// no-op: we sent these, discord doesn't reply to them with data
 	}
 }
 
@@ -153,10 +158,7 @@ start_heartbeat_with_jitter :: proc(client: ^Client, gen: u64) {
 	init_data.client = client
 	init_data.gen = gen
 
-	thread.pool_add_task(
-		&client.worker_pool,
-		context.allocator,
-		proc(task: thread.Task) {
+	thread.pool_add_task(&client.worker_pool, context.allocator, proc(task: thread.Task) {
 			data := (^Heartbeat_Task_Data)(task.data)
 			c := data.client
 			g := data.gen
@@ -171,9 +173,7 @@ start_heartbeat_with_jitter :: proc(client: ^Client, gen: u64) {
 			}
 
 			thread.pool_add_task(&c.worker_pool, context.allocator, heartbeat_pool_task, data)
-		},
-		init_data,
-	)
+		}, init_data)
 }
 
 @(private)
@@ -184,11 +184,7 @@ send_resume :: proc(client: ^Client) {
 
 	resume := Resume_Payload {
 		op = .OP_RESUME,
-		d = Resume_Data {
-			token      = client.token,
-			session_id = client.session_id,
-			seq        = current_seq,
-		},
+		d = Resume_Data{token = client.token, session_id = client.session_id, seq = current_seq},
 	}
 	queue_outbound_payload(client, resume)
 	fmt.println("Sent resume handshake")
@@ -199,12 +195,12 @@ send_identify :: proc(client: ^Client) {
 	handshake := Identify_Payload {
 		op = .OP_IDENTIFY,
 		d = Identify_Data {
-			token   = client.token,
+			token = client.token,
 			intents = {.GUILDS, .GUILD_MESSAGES, .MESSAGE_CONTENT, .DIRECT_MESSAGES},
 			properties = Identify_Properties {
-				os      = "linux",
+				os = "linux",
 				browser = "odin-client",
-				device  = "odin-client",
+				device = "odin-client",
 			},
 			shard = {client.shard_id, client.num_shards},
 		},

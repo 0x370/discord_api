@@ -13,9 +13,7 @@ Embed :: struct {
 	video:       EmbedVideo,
 	provider:    EmbedProvider,
 	author:      EmbedAuthor,
-
 	fields:      []EmbedField,
-
 	flags:       EmbedFlags,
 }
 
@@ -65,7 +63,7 @@ EmbedProvider :: struct {
 }
 
 EmbedAuthor :: struct {
-	name: string,
+	name:           string,
 	url:            string,
 	icon_url:       string,
 	proxy_icon_url: string,

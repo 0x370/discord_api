@@ -1,9 +1,9 @@
 package discord_api
 
 WebhookType :: enum i32 {
-	INCOMING          = 1,
-	CHANNEL_FOLLOWER  = 2,
-	APPLICATION       = 3,
+	INCOMING         = 1,
+	CHANNEL_FOLLOWER = 2,
+	APPLICATION      = 3,
 }
 
 Webhook :: struct {

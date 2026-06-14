@@ -5,7 +5,13 @@ import "core:fmt"
 
 import "api"
 
-on_command :: proc(client: ^Client, name: string, description: string, handler: Command_Handler, options: ..api.ApplicationCommandOption) {
+on_command :: proc(
+	client: ^Client,
+	name: string,
+	description: string,
+	handler: Command_Handler,
+	options: ..api.ApplicationCommandOption,
+) {
 	reg := Command_Registration {
 		command = api.ApplicationCommand {
 			name = name,
@@ -23,7 +29,13 @@ register_commands :: proc(client: ^Client) {
 }
 
 register_guild_commands :: proc(client: ^Client, guild_id: api.Snowflake) {
-	_register_on_endpoint(client, "/applications/%s/guilds/%s/commands", "guild", client.application_id, guild_id)
+	_register_on_endpoint(
+		client,
+		"/applications/%s/guilds/%s/commands",
+		"guild",
+		client.application_id,
+		guild_id,
+	)
 }
 
 _register_on_endpoint :: proc(client: ^Client, endpoint_fmt: string, scope: string, args: ..any) {
@@ -43,9 +55,19 @@ _register_on_endpoint :: proc(client: ^Client, endpoint_fmt: string, scope: stri
 		resp, ok := api.discord_post(&client.rest_client, endpoint, body)
 		if ok {
 			if resp.status_code >= 200 && resp.status_code < 300 {
-				fmt.printfln("Registered command /%s as %s (status %d)", name, scope, resp.status_code)
+				fmt.printfln(
+					"Registered command /%s as %s (status %d)",
+					name,
+					scope,
+					resp.status_code,
+				)
 			} else {
-				fmt.eprintfln("Failed to register command /%s: HTTP %d: %s", name, resp.status_code, string(resp.body))
+				fmt.eprintfln(
+					"Failed to register command /%s: HTTP %d: %s",
+					name,
+					resp.status_code,
+					string(resp.body),
+				)
 			}
 			delete(resp.body)
 		} else {
@@ -54,10 +76,26 @@ _register_on_endpoint :: proc(client: ^Client, endpoint_fmt: string, scope: stri
 	}
 }
 
-get_string  :: proc(ctx: ^Command_Context, name: string) -> string { return _get_option_value(ctx, name, string) }
-get_integer :: proc(ctx: ^Command_Context, name: string) -> i64    { return _get_option_value(ctx, name, i64) }
-get_number  :: proc(ctx: ^Command_Context, name: string) -> f64    { return _get_option_value(ctx, name, f64) }
-get_bool    :: proc(ctx: ^Command_Context, name: string) -> bool   { return _get_option_value(ctx, name, bool) }
+get_string :: proc(ctx: ^Command_Context, name: string) -> string {return _get_option_value(
+		ctx,
+		name,
+		string,
+	)}
+get_integer :: proc(ctx: ^Command_Context, name: string) -> i64 {return _get_option_value(
+		ctx,
+		name,
+		i64,
+	)}
+get_number :: proc(ctx: ^Command_Context, name: string) -> f64 {return _get_option_value(
+		ctx,
+		name,
+		f64,
+	)}
+get_bool :: proc(ctx: ^Command_Context, name: string) -> bool {return _get_option_value(
+		ctx,
+		name,
+		bool,
+	)}
 
 _get_option_value :: proc(ctx: ^Command_Context, name: string, $T: typeid) -> T {
 	for opt in ctx.data.options {
@@ -77,10 +115,7 @@ respond :: proc(ctx: ^Command_Context, message: string) -> bool {
 respond_with_embed :: proc(ctx: ^Command_Context, content: string, embeds: []api.Embed) -> bool {
 	response := api.InteractionResponse {
 		type = .CHANNEL_MESSAGE_WITH_SOURCE,
-		data = api.InteractionCallbackData {
-			content = content,
-			embeds  = embeds,
-		},
+		data = api.InteractionCallbackData{content = content, embeds = embeds},
 	}
 
 	_, ok := _post_interaction_callback(ctx, response)
@@ -105,12 +140,22 @@ defer_response :: proc(ctx: ^Command_Context, ephemeral: bool) -> (bool, i64) {
 	return true, net_ns
 }
 
-_post_interaction_callback :: proc(ctx: ^Command_Context, response: api.InteractionResponse) -> (api.Http_Response, bool) {
+_post_interaction_callback :: proc(
+	ctx: ^Command_Context,
+	response: api.InteractionResponse,
+) -> (
+	api.Http_Response,
+	bool,
+) {
 	body, err := json.marshal(response, allocator = context.temp_allocator)
 	if err != nil {
 		fmt.eprintfln("Failed to marshal interaction response: %v", err)
 		return {}, false
 	}
-	endpoint := fmt.tprintf("/interactions/%s/%s/callback", ctx.interaction.id, ctx.interaction.token)
+	endpoint := fmt.tprintf(
+		"/interactions/%s/%s/callback",
+		ctx.interaction.id,
+		ctx.interaction.token,
+	)
 	return api.discord_post(&ctx.client.rest_client, endpoint, body)
 }

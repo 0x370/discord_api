@@ -6,11 +6,11 @@ StageInstancePrivacyLevel :: enum i32 {
 }
 
 StageInstance :: struct {
-	id:                          Snowflake,
-	guild_id:                    Snowflake,
-	channel_id:                  Snowflake,
-	topic:                       string,
-	privacy_level:               StageInstancePrivacyLevel,
-	discoverable_disabled:       bool,
-	guild_scheduled_event_id:    Snowflake,
+	id:                       Snowflake,
+	guild_id:                 Snowflake,
+	channel_id:               Snowflake,
+	topic:                    string,
+	privacy_level:            StageInstancePrivacyLevel,
+	discoverable_disabled:    bool,
+	guild_scheduled_event_id: Snowflake,
 }

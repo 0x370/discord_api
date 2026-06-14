@@ -86,10 +86,14 @@ deep_clone_any :: proc(a: any, allocator: runtime.Allocator) {
 		tag_value: i64 = ---
 		if info.tag_type != nil {
 			switch info.tag_type.size {
-			case 1: tag_value = i64((^u8)(tag_ptr)^)
-			case 2: tag_value = i64((^u16)(tag_ptr)^)
-			case 4: tag_value = i64((^u32)(tag_ptr)^)
-			case 8: tag_value = (^i64)(tag_ptr)^
+			case 1:
+				tag_value = i64((^u8)(tag_ptr)^)
+			case 2:
+				tag_value = i64((^u16)(tag_ptr)^)
+			case 4:
+				tag_value = i64((^u32)(tag_ptr)^)
+			case 8:
+				tag_value = (^i64)(tag_ptr)^
 			}
 		}
 		if tag_value > 0 {
@@ -97,14 +101,17 @@ deep_clone_any :: proc(a: any, allocator: runtime.Allocator) {
 			if idx < len(info.variants) {
 				variant_ti := info.variants[idx]
 				if variant_ti != nil {
-					variant_any := any{data = a.data, id = variant_ti.id}
+					variant_any := any {
+						data = a.data,
+						id   = variant_ti.id,
+					}
 					deep_clone_any(variant_any, allocator)
 				}
 			}
 		}
 	case reflect.Type_Info_Map:
-		// Maps are reference types. The parent struct's mem_copy
-		// already shallow-copies the map header.
+	// Maps are reference types. The parent struct's mem_copy
+	// already shallow-copies the map header.
 	}
 }
 
@@ -168,10 +175,16 @@ deep_free_any :: proc(a: any, allocator: runtime.Allocator) {
 		if ptr^ != nil {
 			pointee_ti := reflect.type_info_base(info.elem)
 			#partial switch inner in pointee_ti.variant {
-			case reflect.Type_Info_Struct, reflect.Type_Info_Union,
-			     reflect.Type_Info_Slice, reflect.Type_Info_String,
-			     reflect.Type_Info_Array, reflect.Type_Info_Pointer:
-				inner_any := any{data = ptr^, id = info.elem.id}
+			case reflect.Type_Info_Struct,
+			     reflect.Type_Info_Union,
+			     reflect.Type_Info_Slice,
+			     reflect.Type_Info_String,
+			     reflect.Type_Info_Array,
+			     reflect.Type_Info_Pointer:
+				inner_any := any {
+					data = ptr^,
+					id   = info.elem.id,
+				}
 				deep_free_any(inner_any, allocator)
 			}
 			free(ptr^, allocator)
@@ -182,10 +195,14 @@ deep_free_any :: proc(a: any, allocator: runtime.Allocator) {
 		tag_value: i64 = ---
 		if info.tag_type != nil {
 			switch info.tag_type.size {
-			case 1: tag_value = i64((^u8)(tag_ptr)^)
-			case 2: tag_value = i64((^u16)(tag_ptr)^)
-			case 4: tag_value = i64((^u32)(tag_ptr)^)
-			case 8: tag_value = (^i64)(tag_ptr)^
+			case 1:
+				tag_value = i64((^u8)(tag_ptr)^)
+			case 2:
+				tag_value = i64((^u16)(tag_ptr)^)
+			case 4:
+				tag_value = i64((^u32)(tag_ptr)^)
+			case 8:
+				tag_value = (^i64)(tag_ptr)^
 			}
 		}
 		if tag_value > 0 {
@@ -193,12 +210,15 @@ deep_free_any :: proc(a: any, allocator: runtime.Allocator) {
 			if idx < len(info.variants) {
 				variant_ti := info.variants[idx]
 				if variant_ti != nil {
-					variant_any := any{data = a.data, id = variant_ti.id}
+					variant_any := any {
+						data = a.data,
+						id   = variant_ti.id,
+					}
 					deep_free_any(variant_any, allocator)
 				}
 			}
 		}
 	case reflect.Type_Info_Map:
-		// Map entries cannot be easily iterated from reflection.
+	// Map entries cannot be easily iterated from reflection.
 	}
 }

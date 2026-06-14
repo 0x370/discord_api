@@ -5,9 +5,9 @@ PollLayoutType :: enum i32 {
 }
 
 PollCreateRequest :: struct {
-	question:            PollMedia,
-	answers:             []PollAnswer,
-	duration:            int,
-	allow_multiselect:   bool,
-	layout_type:         PollLayoutType,
+	question:          PollMedia,
+	answers:           []PollAnswer,
+	duration:          int,
+	allow_multiselect: bool,
+	layout_type:       PollLayoutType,
 }

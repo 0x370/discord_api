@@ -38,7 +38,13 @@ run_network_pump :: proc(client: ^Client) {
 
 		bytes_received: uint = 0
 		meta: ^curl.ws_frame
-		err := curl.ws_recv(client.curl_handle, rawptr(&read_buffer[0]), len(read_buffer), &bytes_received, &meta)
+		err := curl.ws_recv(
+			client.curl_handle,
+			rawptr(&read_buffer[0]),
+			len(read_buffer),
+			&bytes_received,
+			&meta,
+		)
 		if err == .E_OK && bytes_received > 0 {
 			had_work = true
 			append(&frame_buffer, ..read_buffer[:bytes_received])
@@ -68,7 +74,14 @@ run_network_pump :: proc(client: ^Client) {
 
 			had_work = true
 			bytes_written: uint = 0
-			curl.ws_send(client.curl_handle, raw_data(out_frame), len(out_frame), &bytes_written, 0, {.TEXT})
+			curl.ws_send(
+				client.curl_handle,
+				raw_data(out_frame),
+				len(out_frame),
+				&bytes_written,
+				0,
+				{.TEXT},
+			)
 			delete(out_frame)
 			sync.lock(&client.outbound_mutex)
 		}
@@ -77,7 +90,11 @@ run_network_pump :: proc(client: ^Client) {
 		if !had_work {
 			sync.lock(&client.outbound_mutex)
 			if queue.len(client.outbound_queue) == 0 && client.is_running {
-				sync.cond_wait_with_timeout(&client.outbound_cond, &client.outbound_mutex, 5 * time.Millisecond)
+				sync.cond_wait_with_timeout(
+					&client.outbound_cond,
+					&client.outbound_mutex,
+					5 * time.Millisecond,
+				)
 			}
 			sync.unlock(&client.outbound_mutex)
 		}

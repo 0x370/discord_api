@@ -7,7 +7,7 @@ import "core:thread"
 Callback_Task_Data :: struct {
 	callback:  Event_Callback,
 	payload:   rawptr,
-	cleanup:   proc(rawptr, runtime.Allocator),
+	cleanup:   proc(_: rawptr, _: runtime.Allocator),
 	allocator: runtime.Allocator,
 }
 
@@ -15,7 +15,10 @@ on :: proc(client: ^Client, event_name: string, callback: Event_Callback) {
 	sync.lock(&client.event_mutex)
 
 	if _, ok := client.event_handlers[event_name]; !ok {
-		client.event_handlers[event_name] = make([dynamic]Event_Listener, allocator = client.allocator)
+		client.event_handlers[event_name] = make(
+			[dynamic]Event_Listener,
+			allocator = client.allocator,
+		)
 	}
 
 	append(&client.event_handlers[event_name], Event_Listener{callback = callback})

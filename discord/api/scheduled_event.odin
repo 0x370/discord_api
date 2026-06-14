@@ -72,23 +72,23 @@ GuildScheduledEventRecurrenceRule :: struct {
 }
 
 GuildScheduledEvent :: struct {
-	id:                 Snowflake,
-	guild_id:           Snowflake,
-	channel_id:         Snowflake,
-	creator_id:         Snowflake,
-	name:               string,
-	description:        string,
+	id:                   Snowflake,
+	guild_id:             Snowflake,
+	channel_id:           Snowflake,
+	creator_id:           Snowflake,
+	name:                 string,
+	description:          string,
 	scheduled_start_time: string,
 	scheduled_end_time:   string,
-	privacy_level:      GuildScheduledEventPrivacyLevel,
-	status:             GuildScheduledEventStatus,
-	entity_type:        GuildScheduledEventEntityType,
-	entity_id:          Snowflake,
-	entity_metadata:    GuildScheduledEventEntityMetadata,
-	creator:            User,
-	user_count:         int,
-	image:              string,
-	recurrence_rule:    GuildScheduledEventRecurrenceRule,
+	privacy_level:        GuildScheduledEventPrivacyLevel,
+	status:               GuildScheduledEventStatus,
+	entity_type:          GuildScheduledEventEntityType,
+	entity_id:            Snowflake,
+	entity_metadata:      GuildScheduledEventEntityMetadata,
+	creator:              User,
+	user_count:           int,
+	image:                string,
+	recurrence_rule:      GuildScheduledEventRecurrenceRule,
 }
 
 GuildScheduledEventUser :: struct {

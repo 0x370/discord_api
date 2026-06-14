@@ -42,15 +42,15 @@ _read_process_cpu_ticks :: proc() -> (u64, u64) {
 	stime: u64 = 0
 
 	for pos < len(data) && field_idx <= 12 {
-		for pos < len(data) && (data[pos] == ' ' || data[pos] == '\t') { pos += 1 }
+		for pos < len(data) && (data[pos] == ' ' || data[pos] == '\t') {pos += 1}
 		if pos >= len(data) do break
 
 		start := pos
-		for pos < len(data) && data[pos] != ' ' && data[pos] != '\t' { pos += 1 }
+		for pos < len(data) && data[pos] != ' ' && data[pos] != '\t' {pos += 1}
 
 		val, _ := strconv.parse_u64(string(data[start:pos]))
-		if field_idx == 11 { utime = val }
-		if field_idx == 12 { stime = val }
+		if field_idx == 11 {utime = val}
+		if field_idx == 12 {stime = val}
 		field_idx += 1
 	}
 
@@ -70,11 +70,14 @@ _read_system_cpu_ticks :: proc() -> u64 {
 	total: u64 = 0
 
 	for pos < len(data) {
-		for pos < len(data) && (data[pos] == ' ' || data[pos] == '\t') { pos += 1 }
+		for pos < len(data) && (data[pos] == ' ' || data[pos] == '\t') {pos += 1}
 		if pos >= len(data) || data[pos] == '\n' do break
 
 		start := pos
-		for pos < len(data) && data[pos] != ' ' && data[pos] != '\t' && data[pos] != '\n' { pos += 1 }
+		for pos < len(data) &&
+		    data[pos] != ' ' &&
+		    data[pos] != '\t' &&
+		    data[pos] != '\n' {pos += 1}
 
 		val, _ := strconv.parse_u64(string(data[start:pos]))
 		total += val
@@ -95,9 +98,9 @@ _read_memory_kb :: proc() -> int {
 	for i := 0; i <= len(data) - len(target); i += 1 {
 		if s[i:i + len(target)] == target {
 			j := i + len(target)
-			for j < len(data) && (data[j] == ' ' || data[j] == '\t') { j += 1 }
+			for j < len(data) && (data[j] == ' ' || data[j] == '\t') {j += 1}
 			start := j
-			for j < len(data) && data[j] >= '0' && data[j] <= '9' { j += 1 }
+			for j < len(data) && data[j] >= '0' && data[j] <= '9' {j += 1}
 			if j > start {
 				val, _ := strconv.parse_int(string(data[start:j]))
 				return val
@@ -121,7 +124,7 @@ render_dashboard :: proc(client: ^Client) {
 	cpu_pct: f64 = 0.0
 	if client.prev_sys_ticks > 0 && sys_delta > 0 {
 		cpu_pct = f64(proc_delta) / f64(sys_delta) * f64(num_cores) * 100.0
-		if cpu_pct > 100.0 * f64(num_cores) { cpu_pct = 100.0 * f64(num_cores) }
+		if cpu_pct > 100.0 * f64(num_cores) {cpu_pct = 100.0 * f64(num_cores)}
 	}
 
 	client.prev_proc_ticks = proc_ticks
@@ -152,31 +155,46 @@ render_dashboard :: proc(client: ^Client) {
 	fmt.eprint("\033[2J\033[H")
 	fmt.eprintfln("")
 	fmt.eprintfln("  Discord Bot Dashboard [Shard %d/%d]", client.shard_id, client.num_shards)
-	fmt.eprintfln("  %s", "────────────────────────────────────────")
+	fmt.eprintfln(
+		"  %s",
+		"────────────────────────────────────────",
+	)
 	fmt.eprintfln("  %-18s %d", "Servers:", guild_count)
 	fmt.eprintfln("  %-18s %d", "Users:", client.total_members)
 	fmt.eprintfln("  %-18s %s", "Uptime:", uptime_str)
 	fmt.eprintfln("  %-18s %s", "Session ID:", client.session_id)
-	fmt.eprintfln("  %s", "────────────────────────────────────────")
+	fmt.eprintfln(
+		"  %s",
+		"────────────────────────────────────────",
+	)
 	fmt.eprintfln("  %-18s %d", "Total Events:", client.total_events)
 	fmt.eprintfln("  %-18s %s", "Last Event:", client.last_event_type)
 	fmt.eprintfln("  %-18s %.2f/s", "Event Rate:", events_per_sec)
 	fmt.eprintfln("  %-18s %d", "Messages Seen:", client.total_messages)
 	fmt.eprintfln("  %-18s %d", "Commands Run:", client.total_commands)
 	fmt.eprintfln("  %-18s %d", "REST API Calls:", client.rest_client.total_requests)
-	fmt.eprintfln("  %s", "────────────────────────────────────────")
+	fmt.eprintfln(
+		"  %s",
+		"────────────────────────────────────────",
+	)
 	fmt.eprintfln("  %-18s %d", "Cached Messages:", cached_messages)
 	fmt.eprintfln("  %-18s %d", "Reg. Commands:", registered_commands)
 	fmt.eprintfln("  %-18s %d", "Outbound Queue:", outbound_queue_size)
 	fmt.eprintfln("  %-18s %d/1000", "Identifies (24h):", identifies_24h)
-	fmt.eprintfln("  %s", "────────────────────────────────────────")
+	fmt.eprintfln(
+		"  %s",
+		"────────────────────────────────────────",
+	)
 	fmt.eprintfln("  %-18s %.1f%%  (%d cores)", "CPU:", cpu_pct, num_cores)
 	fmt.eprintfln("  %-18s %.1f MB", "Memory:", mem_mb)
 	fmt.eprintfln("  %-18s %d", "Worker Threads:", thread_count)
 	fmt.eprintfln("  %-18s %s", "Gateway Status:", client.received_ack ? "OK" : "WAITING ACK")
 	fmt.eprintfln("  %-18s %.1f ms", "Avg Heartbeat:", avg_latency_ms)
 	fmt.eprintfln("  %-18s %.1f ms", "Last Heartbeat:", last_latency_ms)
-	fmt.eprintfln("  %s", "────────────────────────────────────────")
+	fmt.eprintfln(
+		"  %s",
+		"────────────────────────────────────────",
+	)
 }
 
 @(private)
@@ -189,7 +207,8 @@ _compute_latency_stats :: proc(client: ^Client) -> (f64, f64) {
 			total += lat
 		}
 		avg_ms = f64(total / time.Duration(len(client.latency_history))) / f64(time.Millisecond)
-		last_ms = f64(client.latency_history[len(client.latency_history) - 1]) / f64(time.Millisecond)
+		last_ms =
+			f64(client.latency_history[len(client.latency_history) - 1]) / f64(time.Millisecond)
 	}
 	return avg_ms, last_ms
 }

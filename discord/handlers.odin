@@ -102,8 +102,8 @@ handle_ready :: proc(client: ^Client, d_bytes: []byte) {
 	if client.session_id != "" do delete(client.session_id, client.allocator)
 	if client.resume_url != "" do delete(client.resume_url, client.allocator)
 
-	client.session_id    = strings.clone(ready.session_id, client.allocator)
-	client.resume_url    = strings.clone(ready.resume_url, client.allocator)
+	client.session_id = strings.clone(ready.session_id, client.allocator)
+	client.resume_url = strings.clone(ready.resume_url, client.allocator)
 	client.application_id = strings.clone(ready.application.id, client.allocator)
 
 	sync.lock(&client.cache_mutex)
@@ -131,7 +131,7 @@ handle_message_update :: proc(client: ^Client, d_bytes: []byte) {
 	}
 
 	before := deep_clone(cached^, context.temp_allocator)
-	after  := deep_clone(cached^, client.allocator)
+	after := deep_clone(cached^, client.allocator)
 
 	after.content = strings.clone(update.content, client.allocator)
 	after.edited_timestamp = strings.clone(update.edited_timestamp, client.allocator)

@@ -17,9 +17,9 @@ Attachment :: struct {
 	duration_secs:       int,
 	waveform:            string,
 	flags:               AttachmentFlags,
-    clip_participants:   []User,
-    clip_created_at:     Snowflake,
-    application:         Application,
+	clip_participants:   []User,
+	clip_created_at:     Snowflake,
+	application:         Application,
 }
 
 AttachmentFlags :: distinct u64

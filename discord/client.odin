@@ -72,41 +72,37 @@ Command_Context :: struct {
 }
 
 Client :: struct {
-	curl_handle:        ^curl.CURL,
-	worker_pool:        thread.Pool,
-	outbound_mutex:     sync.Mutex,
-	outbound_queue:     queue.Queue([]byte),
-	outbound_cond:      sync.Cond,
-	is_running:         bool,
-	is_reconnecting:    bool,
-	last_sequence:      Maybe(int),
-	sequence_mutex:     sync.Mutex,
-	received_ack:       bool,
-	ack_mutex:          sync.Mutex,
-	token:              string,
-	session_id:         string,
-	resume_url:         string,
-	heartbeat_interval: int,
-	allocator:          runtime.Allocator,
-	_init_done:         bool,
-
-	shard_id:   int,
-	num_shards: int,
-
-	cache_mutex:     sync.Mutex,
-	event_mutex:     sync.RW_Mutex,
-	message_cache:    lru.Cache(api.Snowflake, ^api.Message),
-	event_handlers:  map[string][dynamic]Event_Listener,
-
-	rest_client:      api.Discord_Client,
-	application_id:   api.Snowflake,
-	command_registry: map[string]Command_Registration,
-	known_guilds:     map[api.Snowflake]int,
-	identify_log:     [dynamic]time.Time,
-	identify_mutex:   sync.Mutex,
-	max_concurrency:  int,
-	heartbeat_gen:    u64,
-
+	curl_handle:          ^curl.CURL,
+	worker_pool:          thread.Pool,
+	outbound_mutex:       sync.Mutex,
+	outbound_queue:       queue.Queue([]byte),
+	outbound_cond:        sync.Cond,
+	is_running:           bool,
+	is_reconnecting:      bool,
+	last_sequence:        Maybe(int),
+	sequence_mutex:       sync.Mutex,
+	received_ack:         bool,
+	ack_mutex:            sync.Mutex,
+	token:                string,
+	session_id:           string,
+	resume_url:           string,
+	heartbeat_interval:   int,
+	allocator:            runtime.Allocator,
+	_init_done:           bool,
+	shard_id:             int,
+	num_shards:           int,
+	cache_mutex:          sync.Mutex,
+	event_mutex:          sync.RW_Mutex,
+	message_cache:        lru.Cache(api.Snowflake, ^api.Message),
+	event_handlers:       map[string][dynamic]Event_Listener,
+	rest_client:          api.Discord_Client,
+	application_id:       api.Snowflake,
+	command_registry:     map[string]Command_Registration,
+	known_guilds:         map[api.Snowflake]int,
+	identify_log:         [dynamic]time.Time,
+	identify_mutex:       sync.Mutex,
+	max_concurrency:      int,
+	heartbeat_gen:        u64,
 	total_members:        int,
 	total_events:         u64,
 	total_messages:       u64,
@@ -134,7 +130,11 @@ client_init :: proc(client: ^Client, config: Config) -> bool {
 	client.num_shards = config.num_shards
 
 	lru.init(&client.message_cache, MAX_CACHED_MESSAGES, context.allocator)
-	client.message_cache.on_remove = proc(key: api.Snowflake, value: ^api.Message, user_data: rawptr) {
+	client.message_cache.on_remove = proc(
+		key: api.Snowflake,
+		value: ^api.Message,
+		user_data: rawptr,
+	) {
 		alloc := (^runtime.Allocator)(user_data)
 		deep_free(value^, alloc^)
 		free(value, alloc^)
@@ -161,13 +161,21 @@ client_init :: proc(client: ^Client, config: Config) -> bool {
 	}
 
 	if api.discord_client_init(&client.rest_client, config.token) {
-		bot_info, fetch_ok := api.discord_request(api.Gateway_Bot_Response, &client.rest_client, "/gateway/bot")
+		bot_info, fetch_ok := api.discord_request(
+			api.Gateway_Bot_Response,
+			&client.rest_client,
+			"/gateway/bot",
+		)
 		if fetch_ok {
 			client.max_concurrency = bot_info.session_start_limit.max_concurrency
 			if client.num_shards == 0 {
 				client.num_shards = bot_info.shards
 			}
-			fmt.printfln("Gateway bot info: %d shards, %d max concurrency", bot_info.shards, bot_info.session_start_limit.max_concurrency)
+			fmt.printfln(
+				"Gateway bot info: %d shards, %d max concurrency",
+				bot_info.shards,
+				bot_info.session_start_limit.max_concurrency,
+			)
 			delete(bot_info.url)
 		} else {
 			fmt.eprintln("Failed to fetch /gateway/bot, defaulting max_concurrency to 1")

@@ -16,7 +16,7 @@ identify_check :: proc(client: ^Client) -> bool {
 
 	now := time.now()
 	cutoff_24h := time.time_add(now, -24 * time.Hour)
-	cutoff_5s  := time.time_add(now, -5 * time.Second)
+	cutoff_5s := time.time_add(now, -5 * time.Second)
 
 	write_idx := 0
 	recent_count := 0
