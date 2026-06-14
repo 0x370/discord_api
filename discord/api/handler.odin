@@ -3,6 +3,7 @@ package discord_api
 import curl "vendor:curl"
 import "base:runtime"
 import c "core:c"
+import "core:bytes"
 import "core:encoding/json"
 import "core:fmt"
 import "core:strconv"
@@ -53,14 +54,6 @@ _method_cstr := [Http_Method]cstring {
 	.PUT    = "PUT",
 	.PATCH  = "PATCH",
 	.DELETE = "DELETE",
-}
-
-@(private)
-Grow_Buffer :: struct {
-	data:  rawptr,
-	len:   int,
-	cap:   int,
-	alloc: runtime.Allocator,
 }
 
 @(private)
@@ -140,18 +133,10 @@ write_callback :: proc "c" (ptr: [^]byte, size: c.size_t, nmemb: c.size_t, userd
 	total := int(size * nmemb)
 	if total == 0 do return 0
 
-	b := (^Grow_Buffer)(userdata)
-	needed := b.len + total
-	if needed > b.cap {
-		new_cap := max(b.cap * 2 + 4096, needed)
-		new_data, err := runtime.mem_resize(b.data, b.cap, new_cap, allocator = b.alloc)
-		if err != nil do return 0
-		b.data = raw_data(new_data)
-		b.cap = new_cap
-	}
-	copy(([^]byte)(b.data)[b.len:needed], ptr[:total])
-	b.len = needed
-	return c.size_t(total)
+	b := (^bytes.Buffer)(userdata)
+	written, err := bytes.buffer_write(b, ptr[:total])
+	if err != nil do return 0
+	return c.size_t(written)
 }
 
 @(private)
@@ -190,8 +175,8 @@ _discord_request :: proc(
 	}
 	sync.unlock(&client.buckets_mutex)
 
-	g: Grow_Buffer
-	g.alloc = allocator
+	g: bytes.Buffer
+	bytes.buffer_init_allocator(&g, 0, 0, allocator)
 
 	req_ctx := Request_Context{
 		client = client,
@@ -217,7 +202,7 @@ _discord_request :: proc(
 	perform_end := time.now()
 	
 	if res != .E_OK {
-		if g.data != nil do free(g.data, allocator)
+		bytes.buffer_destroy(&g)
 		return {}, false
 	}
 
@@ -248,10 +233,7 @@ _discord_request :: proc(
 		// We could retry here, but for now just return the error
 	}
 
-	body_slice: []byte
-	if g.data != nil {
-		body_slice = ([^]byte)(g.data)[:g.len]
-	}
+	body_slice := bytes.buffer_to_bytes(&g)
 
 	return Http_Response{status_code = http_code, body = body_slice, 	perform_time_ns = i64(time.diff(perform_start, perform_end))}, true
 }

@@ -58,8 +58,8 @@ ForwardedMessage :: struct {
 	content:          string,
 	embeds:           []Embed,
 	attachments:      []Attachment,
-	timestamp:        Snowflake,
-	edited_timestamp: Snowflake,
+	timestamp:        string,
+	edited_timestamp: string,
 	flags:            u64,
 	mentions:         []User,
 	mention_roles:    []Snowflake,
@@ -196,7 +196,7 @@ SUPPRESS_EMBEDS :: MessageFlags(1 << 2)
 SOURCE_MESSAGE_DELETED :: MessageFlags(1 << 3)
 URGENT :: MessageFlags(1 << 4)
 HAS_THREAD :: MessageFlags(1 << 5)
-EMPHEMERAL :: MessageFlags(1 << 6)
+EPHEMERAL :: MessageFlags(1 << 6)
 LOADING :: MessageFlags(1 << 7)
 FAILED_TO_MENTION_SOME_ROLES_IN_THREAD :: MessageFlags(1 << 8)
 SUPPRESS_NOTIFICATIONS :: MessageFlags(1 << 12)

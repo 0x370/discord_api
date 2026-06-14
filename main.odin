@@ -58,7 +58,7 @@ main :: proc() {
 			f64(other_ns) / f64(time.Millisecond),
 			f64(total_ns) / f64(time.Millisecond))
 
-		discord.edit_original_response(ctx.cluster, ctx.interaction.token, reply)
+		discord.edit_original_response(ctx.client, ctx.interaction.token, reply)
 	})
 
 	discord.client_run(&client)
