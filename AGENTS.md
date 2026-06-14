@@ -61,7 +61,7 @@ Types observed: `add`, `fix`, `refactor`, `update`.
 │   └── api/                     # Discord REST API types (25 files)
 │       ├── handler.odin         # HTTP client, rate limiter, bucket tracking
 │       ├── snowflake.odin       # Snowflake type & parsing
-│       ├── message.odin, guild.odin, channel.odin, user.odin ...
+│       ├── message.odin         # Message types + REST procs (create, reactions, pins, search)
 │       └── ...
 ├── token                        # Bot token (gitignored)
 └── discord_api*                 # Compiled binary (gitignored)
