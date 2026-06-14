@@ -12,15 +12,15 @@ ActionRowComponent :: struct {
 }
 
 ButtonComponent :: struct {
-	type:      ComponentType,
-	id:        int,
-	style:     ButtonStyle,
-	label:     string,
-	emoji:     Emoji,
-	custom_id: string,
-	sku_id:    Snowflake,
-	url:       string,
-	disabled:  bool,
+	type:      ComponentType `json:"type"`,
+	id:        int           `json:"id"`,
+	style:     ButtonStyle   `json:"style"`,
+	label:     string        `json:"label"`,
+	emoji:     ^Emoji        `json:"emoji,omitempty"`,
+	custom_id: string        `json:"custom_id"`,
+	sku_id:    Snowflake     `json:"sku_id,omitempty"`,
+	url:       string        `json:"url,omitempty"`,
+	disabled:  bool          `json:"disabled,omitempty"`,
 }
 
 StringSelectComponent :: struct {

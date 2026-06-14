@@ -56,10 +56,16 @@ Event_Listener :: struct {
 }
 
 Command_Handler :: #type proc(ctx: ^Command_Context)
+Component_Handler :: #type proc(ctx: ^Component_Context)
 
 Command_Registration :: struct {
 	command: api.ApplicationCommand,
 	handler: Command_Handler,
+}
+
+Component_Registration :: struct {
+	custom_id: string,
+	handler:   Component_Handler,
 }
 
 Command_Context :: struct {
@@ -69,6 +75,14 @@ Command_Context :: struct {
 	received_at: time.Time,
 	started_at:  time.Time,
 	parsed_at:   time.Time,
+}
+
+Component_Context :: struct {
+	client:      ^Client,
+	interaction: api.Interaction,
+	data:        api.MessageComponentInteractionData,
+	received_at: time.Time,
+	started_at:  time.Time,
 }
 
 Client :: struct {
@@ -98,6 +112,7 @@ Client :: struct {
 	rest_client:          api.Discord_Client,
 	application_id:       api.Snowflake,
 	command_registry:     map[string]Command_Registration,
+	component_registry:   map[string]Component_Registration,
 	known_guilds:         map[api.Snowflake]int,
 	identify_log:         [dynamic]time.Time,
 	identify_mutex:       sync.Mutex,
@@ -142,6 +157,7 @@ client_init :: proc(client: ^Client, config: Config) -> bool {
 	client.message_cache.on_remove_user_data = &client.allocator
 	client.event_handlers = make(map[string][dynamic]Event_Listener, allocator = client.allocator)
 	client.command_registry = make(map[string]Command_Registration, allocator = client.allocator)
+	client.component_registry = make(map[string]Component_Registration, allocator = client.allocator)
 	client.known_guilds = make(map[api.Snowflake]int, allocator = client.allocator)
 	client.identify_log = make([dynamic]time.Time, allocator = client.allocator)
 	client.latency_history = make([dynamic]time.Duration, allocator = context.allocator)
@@ -215,6 +231,7 @@ client_destroy :: proc(client: ^Client) {
 	if client.application_id != "" do delete(client.application_id)
 
 	delete(client.command_registry)
+	delete(client.component_registry)
 	delete(client.known_guilds)
 
 	sync.lock(&client.cache_mutex)

@@ -54,8 +54,7 @@ Types observed: `add`, `fix`, `refactor`, `update`.
 │   ├── heartbeat.odin           # Heartbeat loop, identify rate limiting
 │   ├── handlers.odin            # Event handlers (msg create/update/delete, guild, interaction)
 │   ├── event.odin               # User-facing event registration & dispatch
-│   ├── command.odin             # Slash command helpers (on_command, respond, defer, get_X)
-│   ├── rest_helpers.odin        # High-level REST wrappers (bulk overwrite, edit, followup)
+│   ├── command.odin             # Slash command helpers + command REST wrappers (register, bulk_overwrite, delete, webhook followups)
 │   ├── dashboard.odin           # Terminal dashboard (CPU, memory, latency, stats)
 │   ├── helper.odin              # deep_clone, deep_free (reflection-based)
 │   └── api/                     # Discord REST API types (25 files)

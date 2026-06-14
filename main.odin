@@ -252,6 +252,8 @@ main :: proc() {
 		{type = .STRING, name = "guild_id", description = "A guild ID to test get_current_user_guild_member (optional)", required = false},
 	)
 
+	register_dungeon_commands(&client)
+
 	discord.client_run(&client)
 }
 

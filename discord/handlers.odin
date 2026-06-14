@@ -60,7 +60,7 @@ handle_guild_create :: proc(client: ^Client, d_bytes: []byte) {
 	if _, already_known := client.known_guilds[guild.id]; !already_known {
 		client.known_guilds[guild.id] = count
 		client.total_members += count
-		register_guild_commands(client, guild.id)
+		bulk_overwrite_guild_commands(client, guild.id)
 	} else {
 		old_count := client.known_guilds[guild.id]
 		client.total_members -= old_count
@@ -194,32 +194,53 @@ interaction_worker :: proc(task: thread.Task) {
 		return
 	}
 
-	cmd_data, ok := interaction.data.(api.ApplicationCommandInteractionData)
-	if !ok {
-		fmt.eprintln("Interaction worker: data type assertion failed")
-		deep_free(interaction, context.allocator)
+	if cmd_data, is_cmd := interaction.data.(api.ApplicationCommandInteractionData); is_cmd {
+		parsed_at := time.now()
+
+		reg, found := it.client.command_registry[cmd_data.name]
+		if !found {
+			fmt.printfln("Unknown command: %s", cmd_data.name)
+			deep_free(interaction, context.allocator)
+			return
+		}
+
+		ctx := new(Command_Context, allocator = it.client.allocator)
+		ctx.client = it.client
+		ctx.interaction = interaction
+		ctx.data = cmd_data
+		ctx.received_at = it.received_at
+		ctx.started_at = started_at
+		ctx.parsed_at = parsed_at
+
+		reg.handler(ctx)
+
+		deep_free(ctx.interaction, context.allocator)
+		free(ctx)
 		return
 	}
 
-	parsed_at := time.now()
+	if comp_data, is_comp := interaction.data.(api.MessageComponentInteractionData); is_comp {
+		reg, found := it.client.component_registry[comp_data.custom_id]
+		if !found {
+			fmt.printfln("Unhandled component: %s", comp_data.custom_id)
+			deep_free(interaction, context.allocator)
+			return
+		}
 
-	reg, found := it.client.command_registry[cmd_data.name]
-	if !found {
-		fmt.printfln("Unknown command: %s", cmd_data.name)
-		deep_free(interaction, context.allocator)
+		ctx := new(Component_Context, allocator = it.client.allocator)
+		ctx.client = it.client
+		ctx.interaction = interaction
+		ctx.data = comp_data
+		ctx.received_at = it.received_at
+		ctx.started_at = started_at
+
+		reg.handler(ctx)
+
+		deep_free(ctx.interaction, context.allocator)
+		free(ctx)
 		return
 	}
 
-	ctx := new(Command_Context, allocator = it.client.allocator)
-	ctx.client = it.client
-	ctx.interaction = interaction
-	ctx.data = cmd_data
-	ctx.received_at = it.received_at
-	ctx.started_at = started_at
-	ctx.parsed_at = parsed_at
-
-	reg.handler(ctx)
-
-	deep_free(ctx.interaction, context.allocator)
-	free(ctx)
+	fmt.eprintln("Interaction worker: unknown interaction type")
+	deep_free(interaction, context.allocator)
 }

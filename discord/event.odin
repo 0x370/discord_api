@@ -11,6 +11,10 @@ Callback_Task_Data :: struct {
 	allocator: runtime.Allocator,
 }
 
+on_component :: proc(client: ^Client, custom_id: string, handler: Component_Handler) {
+	client.component_registry[custom_id] = Component_Registration{custom_id = custom_id, handler = handler}
+}
+
 on :: proc(client: ^Client, event_name: string, callback: Event_Callback) {
 	sync.lock(&client.event_mutex)
 

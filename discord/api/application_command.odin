@@ -38,9 +38,7 @@ ApplicationCommandOption :: struct {
 	name:                      string `json:"name"`,
 	name_localizations:        Maybe(map[string]string) `json:"name_localizations,omitempty"`,
 	description:               string `json:"description"`,
-	description_localizations: Maybe(
-		map[string]string,
-	) `json:"description_localizations,omitempty"`,
+	description_localizations: Maybe(map[string]string) `json:"description_localizations,omitempty"`,
 	required:                  Maybe(bool) `json:"required,omitempty"`,
 	choices:                   []ApplicationCommandOptionChoice `json:"choices,omitempty"`,
 	options:                   []ApplicationCommandOption `json:"options,omitempty"`,
@@ -65,9 +63,7 @@ ApplicationCommand :: struct {
 	name:                       string `json:"name"`,
 	name_localizations:         Maybe(map[string]string) `json:"name_localizations,omitempty"`,
 	description:                string `json:"description"`,
-	description_localizations:  Maybe(
-		map[string]string,
-	) `json:"description_localizations,omitempty"`,
+	description_localizations:  Maybe(map[string]string) `json:"description_localizations,omitempty"`,
 	options:                    []ApplicationCommandOption `json:"options,omitempty"`,
 	default_member_permissions: Maybe(string) `json:"default_member_permissions,omitempty"`,
 	default_permission:         Maybe(bool) `json:"default_permission,omitempty"`,

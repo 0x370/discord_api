@@ -132,13 +132,13 @@ Poll :: struct {
 }
 
 PollMedia :: struct {
-	text:  string,
-	emoji: Emoji,
+	text:  string `json:"text,omitempty"`,
+	emoji: Emoji `json:"emoji,omitempty"`,
 }
 
 PollAnswer :: struct {
-	answer_id:  int,
-	poll_media: PollMedia,
+	answer_id:  Maybe(int) `json:"answer_id,omitempty"`,
+	poll_media: PollMedia  `json:"poll_media,omitempty"`,
 }
 
 PollResults :: struct {
@@ -277,7 +277,7 @@ SearchMessagesResponse :: struct {
 }
 
 SearchMessagesParams :: struct {
-	content:              Maybe(string)    `args:"name=content"`,
+	content:              Maybe(string)  `args:"name=content"`,
 	author_id:            []Snowflake,
 	author_type:          []string,
 	mentions:             []Snowflake,

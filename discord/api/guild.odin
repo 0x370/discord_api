@@ -652,8 +652,8 @@ search_guild_members :: proc(
 	bool,
 ) {
 	endpoint := fmt.tprintf("/guilds/%s/members/search?query=%s", guild_id, params.query)
-	if l, ok := params.limit.?; ok {
-		endpoint = fmt.tprintf("%s&limit=%d", endpoint, l)
+	if params.limit != 0 {
+		endpoint = fmt.tprintf("%s&limit=%d", endpoint, params.limit)
 	}
 	return discord_request([]GuildMember, client, endpoint)
 }

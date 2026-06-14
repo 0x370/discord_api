@@ -4,72 +4,72 @@ import "core:encoding/json"
 import "core:fmt"
 
 User :: struct {
-	id:                     Snowflake,
-	username:               string,
-	discriminator:          string,
-	global_name:            string,
-	avatar:                 string,
-	bot:                    bool,
-	system:                 bool,
-	mfa_enabled:            bool,
-	banner:                 string,
-	accent_color:           int,
-	locale:                 string,
-	verified:               bool,
-	email:                  string,
-	flags:                  UserFlags,
-	premium_type:           PremiumType,
-	public_flags:           UserFlags,
-	avatar_decoration_data: AvatarDecorationData,
-	collectibles:           Collectibles,
-	primary_guild:          UserPrimaryGuild,
+	id:                     Snowflake         `json:"id,omitempty"`,
+	username:               string            `json:"username,omitempty"`,
+	discriminator:          string            `json:"discriminator,omitempty"`,
+	global_name:            string            `json:"global_name,omitempty"`,
+	avatar:                 string            `json:"avatar,omitempty"`,
+	bot:                    bool              `json:"bot,omitempty"`,
+	system:                 bool              `json:"system,omitempty"`,
+	mfa_enabled:            bool              `json:"mfa_enabled,omitempty"`,
+	banner:                 string            `json:"banner,omitempty"`,
+	accent_color:           int               `json:"accent_color,omitempty"`,
+	locale:                 string            `json:"locale,omitempty"`,
+	verified:               bool              `json:"verified,omitempty"`,
+	email:                  string            `json:"email,omitempty"`,
+	flags:                  UserFlags         `json:"flags,omitempty"`,
+	premium_type:           PremiumType       `json:"premium_type,omitempty"`,
+	public_flags:           UserFlags         `json:"public_flags,omitempty"`,
+	avatar_decoration_data: AvatarDecorationData `json:"avatar_decoration_data,omitempty"`,
+	collectibles:           Collectibles      `json:"collectibles,omitempty"`,
+	primary_guild:          UserPrimaryGuild  `json:"primary_guild,omitempty"`,
 }
 
 AvatarDecorationData :: struct {
-	asset:  string,
-	sku_id: Snowflake,
+	asset:  string    `json:"asset,omitempty"`,
+	sku_id: Snowflake `json:"sku_id,omitempty"`,
 }
 
 Collectibles :: struct {
-	nameplate: Nameplate,
+	nameplate: Nameplate `json:"nameplate,omitempty"`,
 }
 
 Nameplate :: struct {
-	sku_id:  Snowflake,
-	asset:   string,
-	label:   string,
-	palette: string,
+	sku_id:  Snowflake `json:"sku_id,omitempty"`,
+	asset:   string    `json:"asset,omitempty"`,
+	label:   string    `json:"label,omitempty"`,
+	palette: string    `json:"palette,omitempty"`,
 }
 
 UserPrimaryGuild :: struct {
-	identity_guild_id: Snowflake,
-	identity_enabled:  bool,
-	tag:               string,
-	badge:             string,
+	identity_guild_id: Snowflake `json:"identity_guild_id,omitempty"`,
+	identity_enabled:  bool      `json:"identity_enabled,omitempty"`,
+	tag:               string    `json:"tag,omitempty"`,
+	badge:             string    `json:"badge,omitempty"`,
 }
 
 Connection :: struct {
-	id:            string,
-	name:          string,
-	type:          string,
-	revoked:       bool,
-	integrations:  []PartialIntegration,
-	verified:      bool,
-	friend_sync:   bool,
-	show_activity: bool,
-	two_way_link:  bool,
-	visibility:    ConnectionVisibility,
+	id:            string               `json:"id,omitempty"`,
+	name:          string               `json:"name,omitempty"`,
+	type:          string               `json:"type,omitempty"`,
+	revoked:       bool                 `json:"revoked,omitempty"`,
+	integrations:  []PartialIntegration `json:"integrations,omitempty"`,
+	verified:      bool                 `json:"verified,omitempty"`,
+	friend_sync:   bool                 `json:"friend_sync,omitempty"`,
+	show_activity: bool                 `json:"show_activity,omitempty"`,
+	two_way_link:  bool                 `json:"two_way_link,omitempty"`,
+	visibility:    ConnectionVisibility `json:"visibility,omitempty"`,
 }
 
 PartialIntegration :: struct {
-	id:   Snowflake,
-	name: string,
-	type: string,
+	id:   Snowflake `json:"id,omitempty"`,
+	name: string    `json:"name,omitempty"`,
+	type: string    `json:"type,omitempty"`,
 }
 
 ApplicationRoleConnection :: struct {
-	platform_name: string,
-	metadata:      map[string]string,
+	platform_name: string            `json:"platform_name,omitempty"`,
+	metadata:      map[string]string `json:"metadata,omitempty"`,
 }
 
 PremiumType :: enum i32 {
