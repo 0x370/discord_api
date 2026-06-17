@@ -3,12 +3,18 @@ package discord
 import "core:container/lru"
 import "core:encoding/json"
 import "core:fmt"
+import "core:math/rand"
 import "core:strings"
 import "core:sync"
 import "core:thread"
 import "core:time"
 
 import "api"
+
+@(private)
+xp_cooldowns: map[api.Snowflake]time.Time
+@(private)
+xp_cooldown_mutex: sync.Mutex
 
 Interaction_Task_Data :: struct {
 	client:      ^Client,
@@ -32,6 +38,10 @@ handle_message_create :: proc(client: ^Client, d_bytes: []byte) {
 	sync.lock(&client.cache_mutex)
 	lru.set(&client.message_cache, persistent.id, persistent)
 	sync.unlock(&client.cache_mutex)
+
+	if !msg.author.bot {
+		_award_xp(client, msg.author.id, msg.author.username)
+	}
 
 	dispatch_event(client, "MESSAGE_CREATE", msg)
 }
@@ -197,9 +207,14 @@ interaction_worker :: proc(task: thread.Task) {
 	if cmd_data, is_cmd := interaction.data.(api.ApplicationCommandInteractionData); is_cmd {
 		parsed_at := time.now()
 
-		reg, found := it.client.command_registry[cmd_data.name]
+		key := cmd_data.name
+		if len(cmd_data.options) > 0 && int(cmd_data.options[0].type) == 1 {
+			key = fmt.tprintf("%s.%s", cmd_data.name, cmd_data.options[0].name)
+		}
+
+		reg, found := it.client.command_registry[key]
 		if !found {
-			fmt.printfln("Unknown command: %s", cmd_data.name)
+			fmt.printfln("Unknown command: %s", key)
 			deep_free(interaction, context.allocator)
 			return
 		}
@@ -243,4 +258,25 @@ interaction_worker :: proc(task: thread.Task) {
 
 	fmt.eprintln("Interaction worker: unknown interaction type")
 	deep_free(interaction, context.allocator)
+}
+
+@(private)
+_award_xp :: proc(client: ^Client, user_id: api.Snowflake, username: string) {
+	if user_id == "" do return
+
+	sync.lock(&xp_cooldown_mutex)
+	if xp_cooldowns == nil {
+		xp_cooldowns = make(map[api.Snowflake]time.Time)
+	}
+	last, has := xp_cooldowns[user_id]
+	now := time.now()
+	if has && time.diff(last, now) < 60 * time.Second {
+		sync.unlock(&xp_cooldown_mutex)
+		return
+	}
+	xp_cooldowns[user_id] = now
+	sync.unlock(&xp_cooldown_mutex)
+
+	amount := i64(1 + rand.int31_max(10))
+	db_user_add_xp(&client.db, string(user_id), username, amount)
 }

@@ -12,16 +12,60 @@ on_command :: proc(
 	handler: Command_Handler,
 	options: ..api.ApplicationCommandOption,
 ) {
+	cloned_options := deep_clone(options, client.allocator)
 	reg := Command_Registration {
 		command = api.ApplicationCommand {
 			name = name,
 			description = description,
 			type = .CHAT_INPUT,
-			options = options,
+			options = cloned_options,
 		},
 		handler = handler,
 	}
 	client.command_registry[name] = reg
+}
+
+on_subcommand :: proc(
+	client: ^Client,
+	root_name: string,
+	root_desc: string,
+	sub_name: string,
+	sub_desc: string,
+	handler: Command_Handler,
+	options: ..api.ApplicationCommandOption,
+) {
+	sub_opt := api.ApplicationCommandOption{
+		type        = .SUB_COMMAND,
+		name        = sub_name,
+		description = sub_desc,
+		options     = deep_clone(options, client.allocator),
+	}
+
+	if existing, has := client.command_registry[root_name]; has {
+		if existing.command.options == nil || len(existing.command.options) == 0 {
+			existing.command.options = []api.ApplicationCommandOption{sub_opt}
+		} else {
+			cloned := deep_clone(existing.command.options, client.allocator)
+			dyn := make([dynamic]api.ApplicationCommandOption, client.allocator)
+			for o in cloned do append(&dyn, o)
+			append(&dyn, sub_opt)
+			existing.command.options = dyn[:]
+		}
+		client.command_registry[root_name] = existing
+	} else {
+		reg := Command_Registration {
+			command = api.ApplicationCommand{
+				name = root_name,
+				description = root_desc,
+				type = .CHAT_INPUT,
+				options = []api.ApplicationCommandOption{sub_opt},
+			},
+		}
+		client.command_registry[root_name] = reg
+	}
+	client.command_registry[fmt.tprintf("%s.%s", root_name, sub_name)] = Command_Registration{
+		handler = handler,
+	}
 }
 
 register_commands :: proc(client: ^Client) {
@@ -45,6 +89,7 @@ _register_on_endpoint :: proc(client: ^Client, endpoint_fmt: string, scope: stri
 	}
 
 	for name, reg in client.command_registry {
+		if reg.command.name == "" do continue
 		body, err := json.marshal(reg.command, allocator = context.temp_allocator)
 		if err != nil {
 			fmt.eprintfln("Failed to marshal command %q: %v", name, err)
@@ -92,6 +137,7 @@ _bulk_overwrite :: proc(client: ^Client, endpoint_fmt: string, args: ..any) -> b
 
 	commands := make([dynamic]api.ApplicationCommand, context.temp_allocator)
 	for _, reg in client.command_registry {
+		if reg.command.name == "" do continue
 		append(&commands, reg.command)
 	}
 
@@ -175,7 +221,16 @@ get_bool :: proc(ctx: ^Command_Context, name: string) -> bool {return _get_optio
 	)}
 
 _get_option_value :: proc(ctx: ^Command_Context, name: string, $T: typeid) -> T {
-	for opt in ctx.data.options {
+	opts := ctx.data.options
+	if len(opts) > 0 && int(opts[0].type) == 1 {
+		for sub_opt in opts[0].options {
+			if sub_opt.name == name {
+				if v, ok := sub_opt.value.(T); ok { return v }
+			}
+		}
+		return T{}
+	}
+	for opt in opts {
 		if opt.name == name {
 			if v, ok := opt.value.(T); ok {
 				return v
@@ -193,6 +248,16 @@ respond_with_embed :: proc(ctx: ^Command_Context, content: string, embeds: []api
 	response := api.InteractionResponse {
 		type = .CHANNEL_MESSAGE_WITH_SOURCE,
 		data = api.InteractionCallbackData{content = content, embeds = embeds},
+	}
+
+	_, ok := _post_interaction_callback(ctx, response)
+	return ok
+}
+
+respond_with_components :: proc(ctx: ^Command_Context, content: string, embeds: []api.Embed, components: []api.Component) -> bool {
+	response := api.InteractionResponse {
+		type = .CHANNEL_MESSAGE_WITH_SOURCE,
+		data = api.InteractionCallbackData{content = content, embeds = embeds, components = components},
 	}
 
 	_, ok := _post_interaction_callback(ctx, response)

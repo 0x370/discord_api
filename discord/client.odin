@@ -130,12 +130,15 @@ Client :: struct {
 	prev_proc_ticks:      u64,
 	prev_sys_ticks:       u64,
 	last_display_update:  time.Time,
+	db:                   Db,
+	db_path:              string,
 }
 
 Config :: struct {
 	token:      string,
 	shard_id:   int,
 	num_shards: int,
+	db_path:    string,
 }
 
 client_init :: proc(client: ^Client, config: Config) -> bool {
@@ -171,6 +174,14 @@ client_init :: proc(client: ^Client, config: Config) -> bool {
 	thread_count := max(2, os.processor_core_count())
 	thread.pool_init(&client.worker_pool, context.allocator, thread_count = thread_count)
 	thread.pool_start(&client.worker_pool)
+
+	client.db_path = config.db_path != "" ? strings.clone(config.db_path, client.allocator) : strings.clone("bot.db", client.allocator)
+
+	if db, ok := db_init(client.db_path); ok {
+		client.db = db
+	} else {
+		fmt.eprintfln("Failed to initialize database at %s", client.db_path)
+	}
 
 	if !connect_gateway(client) {
 		return false
@@ -247,6 +258,8 @@ client_destroy :: proc(client: ^Client) {
 	api.discord_client_destroy(&client.rest_client)
 	delete(client.identify_log)
 	delete(client.latency_history)
+	db_destroy(&client.db)
+	delete(client.db_path)
 	delete(client.token)
 
 	client._init_done = false

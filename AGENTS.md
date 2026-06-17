@@ -4,25 +4,28 @@
 
 ```bash
 # Build the project (fast, no optimizations)
-odin build .
+odin build . -define:SQLITE3_DYNAMIC_LIB=true -define:SQLITE3_SYSTEM_LIB=true
 
 # Build with optimizations
-odin build . -o:speed
+odin build . -o:speed -define:SQLITE3_DYNAMIC_LIB=true -define:SQLITE3_SYSTEM_LIB=true
 
 # Build with minimal optimizations (good for dev)
-odin build . -o:minimal
+odin build . -o:minimal -define:SQLITE3_DYNAMIC_LIB=true -define:SQLITE3_SYSTEM_LIB=true
 
 # Build with vet & strict style checks
-odin build . -vet -strict-style
+odin build . -vet -strict-style -define:SQLITE3_DYNAMIC_LIB=true -define:SQLITE3_SYSTEM_LIB=true
 
 # Run vet/static analysis only
-odin build . -vet
+odin build . -vet -define:SQLITE3_DYNAMIC_LIB=true -define:SQLITE3_SYSTEM_LIB=true
 
 # Run with token file
-odin run . -- --token "$(cat token)"
+odin run . -- --token "$(cat token)" -define:SQLITE3_DYNAMIC_LIB=true -define:SQLITE3_SYSTEM_LIB=true
+
+# Run with custom db path
+odin build . -define:SQLITE3_DYNAMIC_LIB=true -define:SQLITE3_SYSTEM_LIB=true && ./discord_api --token "$(cat token)" --db-path "custom.db"
 
 # Run with sharding (shard 0 of 2)
-odin build . && ./discord_api --token "$(cat token)" --shard-id 0 --shards 2
+odin build . -define:SQLITE3_DYNAMIC_LIB=true -define:SQLITE3_SYSTEM_LIB=true && ./discord_api --token "$(cat token)" --shard-id 0 --shards 2
 ```
 
 ## Testing
@@ -68,11 +71,12 @@ Types observed: `add`, `fix`, `refactor`, `update`.
 
 ## Package Layout
 
-| Directory       | Package Name | Import Path               |
-|-----------------|--------------|---------------------------|
-| `.`             | `main`       | N/A (entry point)         |
-| `discord/`      | `discord`    | `import discord "discord"` |
-| `discord/api/`  | `discord_api`| `import api "discord/api"` |
+| Directory           | Package Name | Import Path                   |
+|---------------------|--------------|-------------------------------|
+| `.`                 | `main`       | N/A (entry point)             |
+| `discord/`          | `discord`    | `import discord "discord"`     |
+| `discord/api/`      | `discord_api`| `import api "discord/api"`     |
+| `discord/sqlite3/`  | `sqlite3`    | `import sqlite3 "sqlite3"` (relative from `discord/`)|
 
 ## Code Style
 
