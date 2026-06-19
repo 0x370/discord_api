@@ -112,9 +112,6 @@ build_battle_embed :: proc(state: ^CombatState, monster_image_url: string = "") 
 	player_name := state.player.name != "" ? state.player.name : "Unknown"
 	fields[0] = api.EmbedField{name = player_name, value = fmt.tprintf("%s\n%s", hp_bar, mp_bar), _inline = false}
 	monster_value := fmt.tprintf("%s\n%s", mhp_bar, mmp_bar)
-	if boss_desc := get_boss_ability_description(m.ability_name); boss_desc != "" {
-		monster_value = fmt.tprintf("%s\n\n%s", monster_value, boss_desc)
-	}
 	fields[1] = api.EmbedField{name = fmt.tprintf("%s %s%s%s", m.emoji, m.name, rare_tag, boss_tag), value = monster_value, _inline = false}
 
 	title := fmt.tprintf("⚔️ Dungeon — Floor %d · Turn %d", state.floor, state.turn)

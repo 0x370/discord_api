@@ -51,7 +51,7 @@ generate_monster :: proc(floor: int, rare_mult: f64) -> CombatMonster {
 		hp  := tmpl.base_hp + tmpl.scale_hp * level
 		atk := tmpl.base_atk + tmpl.scale_atk * level
 		def := tmpl.base_def + tmpl.scale_def * level
-		return CombatMonster{name = tmpl.name, emoji = tmpl.emoji, kind = .Boss, hp = hp, max_hp = hp, atk = atk, def = def, max_mana = tmpl.base_mana, mana = 0, mana_regen = tmpl.mana_regen, ability_name = tmpl.boss_ability}
+		return CombatMonster{name = strings.clone(tmpl.name), emoji = strings.clone(tmpl.emoji), kind = .Boss, hp = hp, max_hp = hp, atk = atk, def = def, max_mana = tmpl.base_mana, mana = 0, mana_regen = tmpl.mana_regen, ability_name = strings.clone(tmpl.boss_ability)}
 	}
 
 	is_rare := rand.float64() < RARE_MONSTER_CHANCE * rare_mult
@@ -66,7 +66,7 @@ generate_monster :: proc(floor: int, rare_mult: f64) -> CombatMonster {
 	hp  := tmpl.base_hp + tmpl.scale_hp * level
 	atk := tmpl.base_atk + tmpl.scale_atk * level
 	def := tmpl.base_def + tmpl.scale_def * level
-	return CombatMonster{name = tmpl.name, emoji = tmpl.emoji, kind = is_rare ? .Rare : .Normal, hp = hp, max_hp = hp, atk = atk, def = def, max_mana = tmpl.base_mana, mana = 0, mana_regen = tmpl.mana_regen}
+	return CombatMonster{name = strings.clone(tmpl.name), emoji = strings.clone(tmpl.emoji), kind = is_rare ? .Rare : .Normal, hp = hp, max_hp = hp, atk = atk, def = def, max_mana = tmpl.base_mana, mana = 0, mana_regen = tmpl.mana_regen}
 }
 
 emit :: proc(state: ^CombatState, event: CombatEvent) {
