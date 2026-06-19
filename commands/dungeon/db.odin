@@ -2,6 +2,7 @@ package dungeon
 
 import "core:fmt"
 import "core:strings"
+import "core:sync"
 import sqlite3 "../../discord/sqlite3"
 import discord "../../discord"
 
@@ -37,6 +38,8 @@ _sql_prepare :: proc(conn: ^sqlite3.Connection, sql: string) -> (^sqlite3.Statem
 }
 
 db_load_player :: proc(db: ^discord.Db, user_id: string) -> (Player, bool) {
+	sync.lock(&db.mutex); defer sync.unlock(&db.mutex)
+	logd("[db] load_player: user_id=%s", user_id)
 	sql := fmt.tprintf("SELECT gold, item_lootboxes, char_lootboxes, daily_streak, last_daily_claim, current_floor, class, equipped_char_id, weapon_id, head_id, chest_id, legs_id, boots_id FROM dungeon_players WHERE user_id = '%s'", string(user_id))
 	stmt, ok := _sql_prepare(db.conn, sql)
 	if !ok do return {}, false
@@ -68,6 +71,8 @@ db_load_player :: proc(db: ^discord.Db, user_id: string) -> (Player, bool) {
 	return p, true
 }
 db_save_player :: proc(db: ^discord.Db, p: ^Player) -> bool {
+	sync.lock(&db.mutex); defer sync.unlock(&db.mutex)
+	logd("[db] save_player: user_id=%s", p.user_id)
 	class_str := p.class == .ATTACKER ? "attacker" : "healer"
 	sql := fmt.tprintf("INSERT INTO dungeon_players (user_id, gold, item_lootboxes, char_lootboxes, daily_streak, last_daily_claim, current_floor, class, equipped_char_id, weapon_id, head_id, chest_id, legs_id, boots_id) VALUES ('%s', %v, %v, %v, %v, %v, %v, '%s', %v, %v, %v, %v, %v, %v) ON CONFLICT(user_id) DO UPDATE SET gold = %v, item_lootboxes = %v, char_lootboxes = %v, daily_streak = %v, last_daily_claim = %v, current_floor = %v, class = '%s', equipped_char_id = %v, weapon_id = %v, head_id = %v, chest_id = %v, legs_id = %v, boots_id = %v",
 		string(p.user_id), p.gold, p.item_lootboxes, p.char_lootboxes, p.daily_streak, p.last_daily_claim, p.current_floor, class_str, p.equipped_char_id, p.weapon_id, p.head_id, p.chest_id, p.legs_id, p.boots_id,
@@ -76,6 +81,7 @@ db_save_player :: proc(db: ^discord.Db, p: ^Player) -> bool {
 }
 
 db_get_characters :: proc(db: ^discord.Db, user_id: string) -> []CollectedCharacter {
+	sync.lock(&db.mutex); defer sync.unlock(&db.mutex)
 	sql := fmt.tprintf("SELECT id, name, tier, weapon_compat, ability_name, ability_desc FROM dungeon_characters WHERE user_id = '%s' ORDER BY id", string(user_id))
 	stmt, ok := _sql_prepare(db.conn, sql)
 	if !ok do return nil
@@ -93,6 +99,7 @@ db_get_characters :: proc(db: ^discord.Db, user_id: string) -> []CollectedCharac
 }
 
 db_get_character_count :: proc(db: ^discord.Db, user_id: string) -> int {
+	sync.lock(&db.mutex); defer sync.unlock(&db.mutex)
 	sql := fmt.tprintf("SELECT COUNT(*) FROM dungeon_characters WHERE user_id = '%s'", string(user_id))
 	stmt, ok := _sql_prepare(db.conn, sql)
 	if !ok do return 0
@@ -104,6 +111,7 @@ db_get_character_count :: proc(db: ^discord.Db, user_id: string) -> int {
 	return 0
 }
 
+// db_create_player_if_new does not lock — db_load_player and db_save_player lock internally
 db_create_player_if_new :: proc(db: ^discord.Db, user_id: string, class: Class_Type) {
 	if _, ok := db_load_player(db, user_id); ok do return
 	p := Player {
@@ -116,6 +124,8 @@ db_create_player_if_new :: proc(db: ^discord.Db, user_id: string, class: Class_T
 }
 
 db_insert_character :: proc(db: ^discord.Db, user_id: string, name: string, tier: Tier, weapon_compat: Weapon_Compat, ability_name: string, ability_desc: string) -> bool {
+	sync.lock(&db.mutex); defer sync.unlock(&db.mutex)
+	logd("[db] insert_character: user_id=%s name=%s", user_id, name)
 	weapon_str := weapon_compat == .SWORD ? "sword" : "staff"
 	tier_str   := TIER_LABELS[tier]
 	sql := fmt.tprintf("INSERT INTO dungeon_characters (user_id, name, tier, class, weapon_compat, ability_name, ability_desc) VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s')", string(user_id), string(name), tier_str, "attacker", weapon_str, ability_name, ability_desc)
@@ -123,11 +133,13 @@ db_insert_character :: proc(db: ^discord.Db, user_id: string, name: string, tier
 }
 
 db_delete_character :: proc(db: ^discord.Db, user_id: string, char_id: i64) {
+	sync.lock(&db.mutex); defer sync.unlock(&db.mutex)
 	sql := fmt.tprintf("DELETE FROM dungeon_characters WHERE id = %v AND user_id = '%s'", char_id, string(user_id))
 	_sql_exec(db.conn, sql)
 }
 
 db_get_items :: proc(db: ^discord.Db, user_id: string) -> []ItemInstance {
+	sync.lock(&db.mutex); defer sync.unlock(&db.mutex)
 	sql := fmt.tprintf("SELECT id, item_type, tier, base_atk, base_def, bonus_hp, bonus_atk, bonus_def, bonus_spd, bonus_crit, special, floor FROM dungeon_items WHERE user_id = '%s' ORDER BY id", string(user_id))
 	stmt, ok := _sql_prepare(db.conn, sql)
 	if !ok do return nil
@@ -145,6 +157,7 @@ db_get_items :: proc(db: ^discord.Db, user_id: string) -> []ItemInstance {
 }
 
 db_insert_item :: proc(db: ^discord.Db, user_id: string, item: ItemInstance) -> bool {
+	sync.lock(&db.mutex); defer sync.unlock(&db.mutex)
 	item_type_str := ITEM_TIER_NAMES[item.item_type]
 	tier_str      := TIER_LABELS[item.tier]
 	sql := fmt.tprintf("INSERT INTO dungeon_items (user_id, item_type, tier, base_atk, base_def, bonus_hp, bonus_atk, bonus_def, bonus_spd, bonus_crit, special, floor) VALUES ('%s', '%s', '%s', %v, %v, %v, %v, %v, %v, %v, '%s', %v)",
@@ -153,11 +166,13 @@ db_insert_item :: proc(db: ^discord.Db, user_id: string, item: ItemInstance) -> 
 }
 
 db_delete_item :: proc(db: ^discord.Db, user_id: string, item_id: i64) {
+	sync.lock(&db.mutex); defer sync.unlock(&db.mutex)
 	sql := fmt.tprintf("DELETE FROM dungeon_items WHERE id = %v AND user_id = '%s'", item_id, string(user_id))
 	_sql_exec(db.conn, sql)
 }
 
 db_get_item_by_id :: proc(db: ^discord.Db, user_id: string, item_id: i64) -> (ItemInstance, bool) {
+	sync.lock(&db.mutex); defer sync.unlock(&db.mutex)
 	sql := fmt.tprintf("SELECT id, item_type, tier, base_atk, base_def, bonus_hp, bonus_atk, bonus_def, bonus_spd, bonus_crit, special, floor FROM dungeon_items WHERE id = %v AND user_id = '%s'", item_id, string(user_id))
 	stmt, ok := _sql_prepare(db.conn, sql)
 	if !ok do return {}, false
@@ -170,6 +185,7 @@ db_get_item_by_id :: proc(db: ^discord.Db, user_id: string, item_id: i64) -> (It
 }
 
 db_get_floor_encounters :: proc(db: ^discord.Db, user_id: string, floor: int) -> int {
+	sync.lock(&db.mutex); defer sync.unlock(&db.mutex)
 	sql := fmt.tprintf("SELECT encounters FROM dungeon_floor_progress WHERE user_id = '%s' AND floor = %v", string(user_id), floor)
 	stmt, ok := _sql_prepare(db.conn, sql)
 	if !ok do return 0
@@ -181,13 +197,16 @@ db_get_floor_encounters :: proc(db: ^discord.Db, user_id: string, floor: int) ->
 	return 0
 }
 
+// db_increment_floor_encounters: partial lock — db_get_floor_encounters locks internally, then we lock for the write
 db_increment_floor_encounters :: proc(db: ^discord.Db, user_id: string, floor: int) -> int {
 	current := db_get_floor_encounters(db, user_id, floor) + 1
+	sync.lock(&db.mutex); defer sync.unlock(&db.mutex)
 	sql := fmt.tprintf("INSERT INTO dungeon_floor_progress (user_id, floor, encounters) VALUES ('%s', %v, %v) ON CONFLICT(user_id, floor) DO UPDATE SET encounters = %v", string(user_id), floor, current, current)
 	_sql_exec(db.conn, sql)
 	return current
 }
 
+// db_get_highest_floor does not lock — db_load_player locks internally
 db_get_highest_floor :: proc(db: ^discord.Db, user_id: string) -> int {
 	p, ok := db_load_player(db, user_id)
 	if !ok do return 0
@@ -265,43 +284,4 @@ sqlite3_read_item_row :: proc(stmt: ^sqlite3.Statement, user_id: string) -> Item
 	}
 	if raw_special != nil do it.special = strings.clone(string(raw_special))
 	return it
-}
-
-@(private)
-_migrate_tiers :: proc(db: ^discord.Db) {
-	// Create meta table if it doesn't exist
-	_sql_exec(db.conn, "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
-
-	_migrate_if_needed :: proc(db: ^discord.Db, key: string, migrate: proc(db: ^discord.Db)) {
-		check_sql := fmt.tprintf("SELECT value FROM meta WHERE key = '%s'", key)
-		stmt, ok := _sql_prepare(db.conn, check_sql)
-		if ok {
-			defer sqlite3.finalize(stmt)
-			if sqlite3.step(stmt) == .Row do return
-		}
-		migrate(db)
-		_sql_exec(db.conn, fmt.tprintf("INSERT INTO meta (key, value) VALUES ('%s', '1')", key))
-	}
-
-	_migrate_if_needed(db, "tier_rename", proc(db: ^discord.Db) {
-		old_tiers := []string{"S", "A", "B", "C", "D", "F"}
-		new_tiers := []string{"Mythical", "Legendary", "Rare", "Uncommon", "Common", "Common"}
-		for _, i in old_tiers {
-			old := old_tiers[i]
-			new := new_tiers[i]
-			_sql_exec(db.conn, fmt.tprintf("UPDATE dungeon_characters SET tier = '%s' WHERE tier = '%s'", new, old))
-			_sql_exec(db.conn, fmt.tprintf("UPDATE dungeon_items SET tier = '%s' WHERE tier = '%s'", new, old))
-		}
-	})
-
-	_migrate_if_needed(db, "bonus_crit_column", proc(db: ^discord.Db) {
-		_sql_exec(db.conn, "ALTER TABLE dungeon_items ADD COLUMN bonus_crit INTEGER DEFAULT 0")
-	})
-	_migrate_if_needed(db, "floor_column", proc(db: ^discord.Db) {
-		_sql_exec(db.conn, "ALTER TABLE dungeon_items ADD COLUMN floor INTEGER DEFAULT 0")
-	})
-}
-
-db_run_migrations :: proc(db: ^discord.Db) {
-	_migrate_tiers(db)
 }

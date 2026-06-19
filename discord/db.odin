@@ -1,5 +1,6 @@
 package discord
 
+import "core:sync"
 import "core:c"
 import "core:fmt"
 import "core:math"
@@ -7,8 +8,9 @@ import "core:strings"
 import sqlite3 "sqlite3"
 
 Db :: struct {
-	conn:           ^sqlite3.Connection,
-	get_user_stmt:  ^sqlite3.Statement,
+       conn:           ^sqlite3.Connection,
+       get_user_stmt:  ^sqlite3.Statement,
+       mutex:          sync.Mutex,
 }
 
 User_Stats :: struct {
@@ -29,6 +31,10 @@ db_init :: proc(path: string) -> (Db, bool) {
 		fmt.eprintfln("Failed to open database %q: %v", path, rc)
 		return {}, false
 	}
+
+       // Enable WAL mode for concurrent reads with single writer
+       _sql_exec_silent(conn, "PRAGMA journal_mode=WAL")
+       _sql_exec_silent(conn, "PRAGMA synchronous=NORMAL")
 
 	db := Db{conn = conn}
 
@@ -75,14 +81,17 @@ db_init :: proc(path: string) -> (Db, bool) {
 }
 
 db_destroy :: proc(db: ^Db) {
-	if db.get_user_stmt != nil {
-		sqlite3.finalize(db.get_user_stmt)
-		db.get_user_stmt = nil
-	}
-	if db.conn != nil {
-		sqlite3.close(db.conn)
-		db.conn = nil
-	}
+       sync.lock(&db.mutex)
+       defer sync.unlock(&db.mutex)
+       logd("db_destroy: closing database")
+       if db.get_user_stmt != nil {
+               sqlite3.finalize(db.get_user_stmt)
+               db.get_user_stmt = nil
+       }
+       if db.conn != nil {
+               sqlite3.close(db.conn)
+               db.conn = nil
+       }
 }
 
 @(private)
@@ -133,57 +142,65 @@ level_for_xp :: proc(xp: i64) -> i64 {
 }
 
 db_user_add_xp :: proc(db: ^Db, user_id: string, username: string, amount: i64) -> (xp: i64, level: i64, ok: bool) {
-	old_xp := _db_user_get_xp_internal(db, user_id)
-	new_xp := old_xp + amount
-	new_level := level_for_xp(new_xp)
+       sync.lock(&db.mutex)
+       defer sync.unlock(&db.mutex)
+       logd("db_user_add_xp: user_id=%s, amount=%v", user_id, amount)
+       old_xp := _db_user_get_xp_internal(db, user_id)
+       new_xp := old_xp + amount
+       new_level := level_for_xp(new_xp)
 
-	sql := fmt.tprintf("INSERT INTO user_data (user_id, username, xp, level) VALUES ('%s', '%s', %v, %v) ON CONFLICT(user_id) DO UPDATE SET xp = %v, level = %v, username = '%s'", string(user_id), string(username), new_xp, new_level, new_xp, new_level, string(username))
-	if !_sql_exec_simple(db.conn, sql) {
-		return 0, 0, false
-	}
-	return new_xp, new_level, true
+       sql := fmt.tprintf("INSERT INTO user_data (user_id, username, xp, level) VALUES ('%s', '%s', %v, %v) ON CONFLICT(user_id) DO UPDATE SET xp = %v, level = %v, username = '%s'", string(user_id), string(username), new_xp, new_level, new_xp, new_level, string(username))
+       if !_sql_exec_simple(db.conn, sql) {
+               return 0, 0, false
+       }
+       return new_xp, new_level, true
 }
-
 db_user_get_stats :: proc(db: ^Db, user_id: string) -> (xp: i64, level: i64, ok: bool) {
-	if db.get_user_stmt == nil do return 0, 0, false
+       sync.lock(&db.mutex)
+       defer sync.unlock(&db.mutex)
+       logd("db_user_get_stats: user_id=%s", user_id)
+       if db.get_user_stmt == nil do return 0, 0, false
 
-	sqlite3.reset(db.get_user_stmt)
-	user_id_c := strings.clone_to_cstring(user_id, context.temp_allocator)
-	sqlite3.bind_text(db.get_user_stmt, 1, user_id_c, c.int(len(user_id)), {behaviour = .Transient})
+       sqlite3.reset(db.get_user_stmt)
+       user_id_c := strings.clone_to_cstring(user_id, context.temp_allocator)
+       sqlite3.bind_text(db.get_user_stmt, 1, user_id_c, c.int(len(user_id)), {behaviour = .Transient})
 
-	rc := sqlite3.step(db.get_user_stmt)
-	if rc != .Row do return 0, 0, false
+       rc := sqlite3.step(db.get_user_stmt)
+       if rc != .Row do return 0, 0, false
 
-	xp = sqlite3.column_int64(db.get_user_stmt, 0)
-	level = sqlite3.column_int64(db.get_user_stmt, 1)
-	return xp, level, true
+       xp = sqlite3.column_int64(db.get_user_stmt, 0)
+       level = sqlite3.column_int64(db.get_user_stmt, 1)
+       return xp, level, true
 }
 
 db_user_get_leaderboard :: proc(db: ^Db, limit: int, allocator := context.allocator) -> ([]User_Stats, bool) {
-	stmt: ^sqlite3.Statement
-	rc := sqlite3.prepare_v2(db.conn, "SELECT user_id, username, xp, level FROM user_data ORDER BY xp DESC LIMIT ?1", -1, &stmt, nil)
-	if rc != .Ok {
-		fmt.eprintfln("Failed to prepare leaderboard query: %v", rc)
-		return nil, false
-	}
-	defer sqlite3.finalize(stmt)
+       sync.lock(&db.mutex)
+       defer sync.unlock(&db.mutex)
+       logd("db_user_get_leaderboard: limit=%v", limit)
+       stmt: ^sqlite3.Statement
+       rc := sqlite3.prepare_v2(db.conn, "SELECT user_id, username, xp, level FROM user_data ORDER BY xp DESC LIMIT ?1", -1, &stmt, nil)
+       if rc != .Ok {
+               fmt.eprintfln("Failed to prepare leaderboard query: %v", rc)
+               return nil, false
+       }
+       defer sqlite3.finalize(stmt)
 
-	sqlite3.bind_int64(stmt, 1, i64(limit))
+       sqlite3.bind_int64(stmt, 1, i64(limit))
 
-	stats := make([dynamic]User_Stats, allocator)
-	for {
-		rc = sqlite3.step(stmt)
-		if rc == .Done do break
-		if rc != .Row {
-			fmt.eprintfln("Leaderboard step error: %v", rc)
-			delete(stats)
-			return nil, false
-		}
-		stats_entry := get_leaderboard_row(stmt)
-		append(&stats, stats_entry)
-	}
+       stats := make([dynamic]User_Stats, allocator)
+       for {
+               rc = sqlite3.step(stmt)
+               if rc == .Done do break
+               if rc != .Row {
+                       fmt.eprintfln("Leaderboard step error: %v", rc)
+                       delete(stats)
+                       return nil, false
+               }
+               stats_entry := get_leaderboard_row(stmt)
+               append(&stats, stats_entry)
+       }
 
-	return stats[:], true
+       return stats[:], true
 }
 
 @(private)
@@ -202,8 +219,12 @@ get_leaderboard_row :: proc(stmt: ^sqlite3.Statement) -> User_Stats {
 	return stats
 }
 
-@(private)
 _db_user_get_xp_internal :: proc(db: ^Db, user_id: string) -> i64 {
-	xp, _, ok := db_user_get_stats(db, user_id)
-	return ok ? xp : 0
+       if db.get_user_stmt == nil do return 0
+       sqlite3.reset(db.get_user_stmt)
+       user_id_c := strings.clone_to_cstring(user_id, context.temp_allocator)
+       sqlite3.bind_text(db.get_user_stmt, 1, user_id_c, c.int(len(user_id)), {behaviour = .Transient})
+       rc := sqlite3.step(db.get_user_stmt)
+       if rc != .Row do return 0
+       return sqlite3.column_int64(db.get_user_stmt, 0)
 }

@@ -27,27 +27,26 @@ main :: proc() {
 	}
 	defer curl.global_cleanup()
 
-	client: discord.Client
-	db_path := opt.db_path
-	if db_path == "" do db_path = "bot.db"
+       client: discord.Client = ---
+       db_path := opt.db_path
+       if db_path == "" do db_path = "bot.db"
 
-	if !discord.client_init(&client, {
-		token      = opt.token,
-		shard_id   = opt.shard_id,
-		num_shards = opt.shards,
-		db_path    = db_path,
-	}) {
-		fmt.eprintln("Failed to initialize Discord client")
-		return
-	}
-	defer discord.client_destroy(&client)
+       if !discord.client_init(&client, {
+               token      = opt.token,
+               shard_id   = opt.shard_id,
+               num_shards = opt.shards,
+               db_path    = db_path,
+               verbose    = opt.verbose,
+       }) {
+       }
+       defer discord.client_destroy(&client)
 
-	commands.register_echo_commands(&client)
-	commands.register_ping_commands(&client)
-	commands.register_rank_commands(&client)
-	commands.register_leaderboard_commands(&client)
-	dungeon.set_debug(opt.verbose)
-	dungeon.register_commands(&client)
+       commands.register_echo_commands(&client)
+       commands.register_ping_commands(&client)
+       commands.register_rank_commands(&client)
+       commands.register_leaderboard_commands(&client)
+       dungeon.set_debug(opt.verbose)
+       dungeon.register_commands(&client)
 
-	discord.client_run(&client)
+       discord.client_run(&client)
 }

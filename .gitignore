@@ -1,4 +1,5 @@
 discord_api
 opencode.json
 *.db
+*.db-*
 token

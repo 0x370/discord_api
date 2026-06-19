@@ -1,14 +1,11 @@
 package discord
 
 import "core:fmt"
+import "core:math/rand"
 import "core:sync"
-import "core:thread"
-import "core:time"
 
-Heartbeat_Task_Data :: struct {
-	client: ^Client,
-	gen:    u64,
-}
+
+import "core:time"
 
 identify_check :: proc(client: ^Client) -> bool {
 	sync.lock(&client.identify_mutex)
@@ -49,50 +46,61 @@ identify_check :: proc(client: ^Client) -> bool {
 	return true
 }
 
-heartbeat_pool_task :: proc(task: thread.Task) {
-	data := (^Heartbeat_Task_Data)(task.data)
-	client := data.client
-	gen := data.gen
+heartbeat_thread_proc :: proc(data: rawptr) {
+       client := (^Client)(data)
+       gen := client.heartbeat_gen
 
-	if !client.is_running || client.heartbeat_gen != gen {
-		free(data)
-		return
-	}
+       // Jitter: sleep a random fraction of the heartbeat interval on first iteration
+       interval_ms := client.heartbeat_interval > 0 ? client.heartbeat_interval : 45000
+       jitter := int(f64(interval_ms) * rand.float64())
+       time.sleep(time.Duration(jitter) * time.Millisecond)
+       logd("heartbeat: thread started, gen=%d jitter=%dms interval=%dms", gen, jitter, interval_ms)
 
-	sync.lock(&client.ack_mutex)
-	if !client.received_ack {
-		fmt.println("Missed heartbeat ack! reconnecting...")
-		client.is_running = false
-		client.is_reconnecting = true
-		sync.unlock(&client.ack_mutex)
-		free(data)
-		return
-	}
-	client.received_ack = false
-	sync.unlock(&client.ack_mutex)
+       for {
+               sync.lock(&client.state_mutex)
+               if !client.is_running || client.heartbeat_gen != gen {
+                       sync.unlock(&client.state_mutex)
+                       return
+               }
+               sync.unlock(&client.state_mutex)
 
-	sync.lock(&client.sequence_mutex)
-	current_seq := client.last_sequence
-	sync.unlock(&client.sequence_mutex)
+               interval_ms = client.heartbeat_interval > 0 ? client.heartbeat_interval : 45000
+               time.sleep(time.Duration(interval_ms) * time.Millisecond)
 
-	sync.lock(&client.heartbeat_send_mutex)
-	client.heartbeat_send_time = time.now()
-	sync.unlock(&client.heartbeat_send_mutex)
+               sync.lock(&client.state_mutex)
+               if !client.is_running || client.heartbeat_gen != gen {
+                       sync.unlock(&client.state_mutex)
+                       return
+               }
+               sync.unlock(&client.state_mutex)
 
-	ping := Heartbeat_Payload {
-		op = .OP_HEARTBEAT,
-		d  = current_seq,
-	}
+               sync.lock(&client.ack_mutex)
+               if !client.received_ack {
+                       fmt.println("Missed heartbeat ack! reconnecting...")
+                       sync.lock(&client.state_mutex)
+                       client.is_running = false
+                       client.is_reconnecting = true
+                       sync.unlock(&client.state_mutex)
+                       sync.unlock(&client.ack_mutex)
+                       return
+               }
+               client.received_ack = false
+               sync.unlock(&client.ack_mutex)
 
-	queue_outbound_payload(client, ping)
+               sync.lock(&client.sequence_mutex)
+               current_seq := client.last_sequence
+               sync.unlock(&client.sequence_mutex)
 
-	interval_ms := client.heartbeat_interval > 0 ? client.heartbeat_interval : 45000
-	time.sleep(time.Duration(interval_ms) * time.Millisecond)
+               sync.lock(&client.heartbeat_send_mutex)
+               client.heartbeat_send_time = time.now()
+               sync.unlock(&client.heartbeat_send_mutex)
+               logd("heartbeat: sending ping seq=%v", current_seq)
 
-	if !client.is_running || client.heartbeat_gen != gen {
-		free(data)
-		return
-	}
+               ping := Heartbeat_Payload {
+                       op = .OP_HEARTBEAT,
+                       d  = current_seq,
+               }
 
-	thread.pool_add_task(&client.worker_pool, context.allocator, heartbeat_pool_task, data)
+               queue_outbound_payload(client, ping)
+       }
 }

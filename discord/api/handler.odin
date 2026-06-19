@@ -22,14 +22,13 @@ Bucket :: struct {
 }
 
 Discord_Client :: struct {
-	curl_handle:     ^curl.CURL,
-	headers:         ^curl.slist,
-	request_mutex:   sync.Mutex,
-	total_requests:  u64,
-	buckets:         map[string]Bucket,
-	route_to_bucket: map[string]string,
-	buckets_mutex:   sync.Mutex,
-	global_mutex:    sync.Mutex,
+       curl_handle:     ^curl.CURL,
+       headers:         ^curl.slist,
+       request_mutex:   sync.Mutex,
+       total_requests:  u64,
+       buckets:         map[string]Bucket,
+       route_to_bucket: map[string]string,
+       buckets_mutex:   sync.Mutex,
 }
 
 Http_Response :: struct {
@@ -205,16 +204,16 @@ _discord_request :: proc(
 	Http_Response,
 	bool,
 ) #optional_ok {
-	if client.curl_handle == nil do return {}, false
+       if client.curl_handle == nil do return {}, false
 
-	sync.lock(&client.request_mutex)
-	defer sync.unlock(&client.request_mutex)
+       route := get_route(method, endpoint)
+       _bucket_wait(client, route)
 
-	client.total_requests += 1
+       sync.lock(&client.request_mutex)
+       defer sync.unlock(&client.request_mutex)
 
-	route := get_route(method, endpoint)
+       client.total_requests += 1
 
-	_bucket_wait(client, route)
 
 	g: bytes.Buffer
 	bytes.buffer_init_allocator(&g, 0, 0, allocator)

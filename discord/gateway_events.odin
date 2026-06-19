@@ -2,7 +2,7 @@ package discord
 
 import "core:encoding/json"
 import "core:fmt"
-import "core:math/rand"
+
 import "core:strings"
 import "core:sync"
 import "core:thread"
@@ -101,6 +101,7 @@ process_gateway_task :: proc(task: thread.Task) {
 		fmt.eprintfln("Failed to marshal gateway d field: %v", marshal_err)
 		return
 	}
+       logd("gateway: op=%v t=%s d_len=%d", payload.op, event_type, len(d_bytes))
 
 	switch payload.op {
 	case .OP_HELLO:
@@ -122,58 +123,42 @@ process_gateway_task :: proc(task: thread.Task) {
 
 @(private)
 handle_op_hello :: proc(client: ^Client, d_bytes: []byte) {
-	var_data: Hello_Data
-	if json.unmarshal(d_bytes, &var_data) != nil {
-		fmt.eprintln("Failed to parse HELLO data")
-		return
-	}
+       var_data: Hello_Data
+       if json.unmarshal(d_bytes, &var_data) != nil {
+               fmt.eprintln("Failed to parse HELLO data")
+               return
+       }
 
-	fmt.printfln("Got hello. Heartbeat interval: %d ms", var_data.heartbeat_interval)
-	client.heartbeat_interval = var_data.heartbeat_interval
-	client.heartbeat_gen += 1
-	gen := client.heartbeat_gen
+       fmt.printfln("Got hello. Heartbeat interval: %d ms", var_data.heartbeat_interval)
+       client.heartbeat_interval = var_data.heartbeat_interval
+       logd("hello: interval=%dms", var_data.heartbeat_interval)
+       client.heartbeat_gen += 1
 
-	sync.lock(&client.ack_mutex)
-	client.received_ack = true
-	sync.unlock(&client.ack_mutex)
+       sync.lock(&client.ack_mutex)
+       client.received_ack = true
+       sync.unlock(&client.ack_mutex)
 
-	start_heartbeat_with_jitter(client, gen)
+       start_heartbeat_with_jitter(client)
 
-	if client.session_id != "" {
-		send_resume(client)
-	} else {
-		if !identify_check(client) {
-			fmt.eprintln("Identify rate limited, will retry on reconnect")
-			client.is_running = false
-			client.is_reconnecting = true
-			return
-		}
-		send_identify(client)
-	}
+       sync.lock(&client.state_mutex)
+       defer sync.unlock(&client.state_mutex)
+
+       if client.session_id != "" {
+               send_resume(client)
+       } else {
+               if !identify_check(client) {
+                       fmt.eprintln("Identify rate limited, will retry on reconnect")
+                       client.is_running = false
+                       client.is_reconnecting = true
+                       return
+               }
+               send_identify(client)
+       }
 }
 
 @(private)
-start_heartbeat_with_jitter :: proc(client: ^Client, gen: u64) {
-	init_data := new(Heartbeat_Task_Data)
-	init_data.client = client
-	init_data.gen = gen
-
-	thread.pool_add_task(&client.worker_pool, context.allocator, proc(task: thread.Task) {
-			data := (^Heartbeat_Task_Data)(task.data)
-			c := data.client
-			g := data.gen
-
-			interval_ms := c.heartbeat_interval > 0 ? c.heartbeat_interval : 45000
-			jitter := int(f64(interval_ms) * rand.float64())
-			time.sleep(time.Duration(jitter) * time.Millisecond)
-
-			if !c.is_running || c.heartbeat_gen != g {
-				free(data)
-				return
-			}
-
-			thread.pool_add_task(&c.worker_pool, context.allocator, heartbeat_pool_task, data)
-		}, init_data)
+start_heartbeat_with_jitter :: proc(client: ^Client) {
+       client.heartbeat_thread = thread.create_and_start_with_data(client, heartbeat_thread_proc)
 }
 
 @(private)
@@ -216,6 +201,7 @@ send_identify :: proc(client: ^Client) {
 
 @(private)
 handle_op_dispatch :: proc(client: ^Client, event_type: string, d_bytes: []byte) {
+       logd("dispatch: type=%s d_len=%d", event_type, len(d_bytes))
 	if event_type == "" do return
 
 	client.total_events += 1
@@ -243,6 +229,7 @@ handle_op_dispatch :: proc(client: ^Client, event_type: string, d_bytes: []byte)
 
 @(private)
 handle_op_heartbeat :: proc(client: ^Client) {
+       logd("heartbeat: forced by server")
 	sync.lock(&client.sequence_mutex)
 	current_seq := client.last_sequence
 	sync.unlock(&client.sequence_mutex)
@@ -257,44 +244,52 @@ handle_op_heartbeat :: proc(client: ^Client) {
 
 @(private)
 handle_op_reconnect :: proc(client: ^Client) {
-	fmt.println("Discord requested a reconnect. Tearing down socket loop...")
-	client.is_running = false
-	client.is_reconnecting = true
+       fmt.println("Discord requested a reconnect. Tearing down socket loop...")
+       sync.lock(&client.state_mutex)
+       client.is_running = false
+       client.is_reconnecting = true
+       logd("reconnect: requested by server")
+       sync.unlock(&client.state_mutex)
 }
 
 @(private)
 handle_op_invalid_session :: proc(client: ^Client, d: json.Value) {
-	can_resume := false
-	if _, is_null := d.(json.Null); !is_null {
-		if d_bool, is_bool := d.(bool); is_bool {
-			can_resume = d_bool
-		}
-	}
-	fmt.printfln("Invalid Session received. Can resume?: %v", can_resume)
+       can_resume := false
+       if _, is_null := d.(json.Null); !is_null {
+               if d_bool, is_bool := d.(bool); is_bool {
+                       can_resume = d_bool
+               }
+       }
+       fmt.printfln("Invalid Session received. Can resume?: %v", can_resume)
+       logd("invalid_session: can_resume=%v", can_resume)
 
-	if !can_resume {
-		if client.session_id != "" do delete(client.session_id)
-		if client.resume_url != "" do delete(client.resume_url)
-		client.session_id = ""
-		client.resume_url = ""
-	}
-
-	client.is_running = false
-	client.is_reconnecting = true
+       sync.lock(&client.state_mutex)
+       if !can_resume {
+               if client.session_id != "" do delete(client.session_id)
+               if client.resume_url != "" do delete(client.resume_url)
+               client.session_id = ""
+               client.resume_url = ""
+       }
+       client.is_running = false
+       client.is_reconnecting = true
+       sync.unlock(&client.state_mutex)
 }
 
 @(private)
 handle_op_heartbeat_ack :: proc(client: ^Client) {
-	sync.lock(&client.ack_mutex)
-	client.received_ack = true
-	sync.unlock(&client.ack_mutex)
+       sync.lock(&client.ack_mutex)
+       client.received_ack = true
+       sync.unlock(&client.ack_mutex)
 
-	sync.lock(&client.heartbeat_send_mutex)
-	rtt := time.since(client.heartbeat_send_time)
-	sync.unlock(&client.heartbeat_send_mutex)
+       sync.lock(&client.heartbeat_send_mutex)
+       rtt := time.since(client.heartbeat_send_time)
+       logd("heartbeat_ack: rtt=%v", rtt)
+       sync.unlock(&client.heartbeat_send_mutex)
 
-	if len(client.latency_history) >= 100 {
-		pop_front(&client.latency_history)
-	}
-	append(&client.latency_history, rtt)
+       sync.lock(&client.latency_mutex)
+       if len(client.latency_history) >= 100 {
+               pop_front(&client.latency_history)
+       }
+       append(&client.latency_history, rtt)
+       sync.unlock(&client.latency_mutex)
 }

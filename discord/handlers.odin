@@ -30,6 +30,7 @@ handle_message_create :: proc(client: ^Client, d_bytes: []byte) {
 		fmt.eprintln("Failed to parse MESSAGE_CREATE")
 		return
 	}
+       logd("message_create: author=%s channel=%s", msg.author.username, msg.channel_id)
 	defer deep_free(msg, context.allocator)
 
 	if !msg.author.bot {
@@ -102,26 +103,28 @@ handle_guild_delete :: proc(client: ^Client, d_bytes: []byte) {
 }
 
 handle_ready :: proc(client: ^Client, d_bytes: []byte) {
-	ready: Ready_Event_Data
-	if json.unmarshal(d_bytes, &ready) != nil {
-		fmt.eprintln("Failed to parse READY")
-		return
-	}
-	defer deep_free(ready, context.allocator)
+       ready: Ready_Event_Data
+       if json.unmarshal(d_bytes, &ready) != nil {
+               fmt.eprintln("Failed to parse READY")
+               return
+       }
+       defer deep_free(ready, context.allocator)
 
-	if client.session_id != "" do delete(client.session_id, client.allocator)
-	if client.resume_url != "" do delete(client.resume_url, client.allocator)
+       sync.lock(&client.state_mutex)
+       if client.session_id != "" do delete(client.session_id, client.allocator)
+       if client.resume_url != "" do delete(client.resume_url, client.allocator)
+       client.session_id = strings.clone(ready.session_id, client.allocator)
+       client.resume_url = strings.clone(ready.resume_url, client.allocator)
+       client.application_id = strings.clone(ready.application.id, client.allocator)
+       logd("ready: session_id=%s app_id=%s", ready.session_id, ready.application.id)
+       sync.unlock(&client.state_mutex)
 
-	client.session_id = strings.clone(ready.session_id, client.allocator)
-	client.resume_url = strings.clone(ready.resume_url, client.allocator)
-	client.application_id = strings.clone(ready.application.id, client.allocator)
+       sync.lock(&client.cache_mutex)
+       clear(&client.known_guilds)
+       client.total_members = 0
+       sync.unlock(&client.cache_mutex)
 
-	sync.lock(&client.cache_mutex)
-	clear(&client.known_guilds)
-	client.total_members = 0
-	sync.unlock(&client.cache_mutex)
-
-	fmt.printfln("Bot is ready! Session: %s | App: %s", client.session_id, client.application_id)
+       fmt.printfln("Bot is ready! Session: %s | App: %s", client.session_id, client.application_id)
 }
 
 handle_message_update :: proc(client: ^Client, d_bytes: []byte) {
@@ -205,6 +208,7 @@ interaction_worker :: proc(task: thread.Task) {
 	}
 
 	if cmd_data, is_cmd := interaction.data.(api.ApplicationCommandInteractionData); is_cmd {
+               logd("interaction: command=%s user=%s", cmd_data.name, interaction.user.id)
 		parsed_at := time.now()
 
 		key := cmd_data.name

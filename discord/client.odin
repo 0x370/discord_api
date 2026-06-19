@@ -91,12 +91,14 @@ Client :: struct {
 	outbound_mutex:       sync.Mutex,
 	outbound_queue:       queue.Queue([]byte),
 	outbound_cond:        sync.Cond,
+	state_mutex:          sync.Mutex,
 	is_running:           bool,
 	is_reconnecting:      bool,
 	last_sequence:        Maybe(int),
 	sequence_mutex:       sync.Mutex,
 	received_ack:         bool,
 	ack_mutex:            sync.Mutex,
+	latency_mutex:        sync.Mutex,
 	token:                string,
 	session_id:           string,
 	resume_url:           string,
@@ -118,6 +120,7 @@ Client :: struct {
 	identify_mutex:       sync.Mutex,
 	max_concurrency:      int,
 	heartbeat_gen:        u64,
+	heartbeat_thread:     ^thread.Thread,
 	total_members:        int,
 	total_events:         u64,
 	total_messages:       u64,
@@ -132,6 +135,7 @@ Client :: struct {
 	last_display_update:  time.Time,
 	db:                   Db,
 	db_path:              string,
+	verbose:              bool,
 }
 
 Config :: struct {
@@ -139,6 +143,7 @@ Config :: struct {
 	shard_id:   int,
 	num_shards: int,
 	db_path:    string,
+	verbose:    bool,
 }
 
 client_init :: proc(client: ^Client, config: Config) -> bool {
@@ -146,6 +151,15 @@ client_init :: proc(client: ^Client, config: Config) -> bool {
 	client.token = strings.clone(config.token, client.allocator)
 	client.shard_id = config.shard_id
 	client.num_shards = config.num_shards
+	client.verbose = config.verbose
+	set_debug(config.verbose)
+	logd(
+		"client_init: token=...%s shard=%d/%d db_path=%s",
+		config.token[len(config.token) - 4:],
+		config.shard_id,
+		config.num_shards,
+		config.db_path,
+	)
 
 	lru.init(&client.message_cache, MAX_CACHED_MESSAGES, context.allocator)
 	client.message_cache.on_remove = proc(
@@ -160,7 +174,10 @@ client_init :: proc(client: ^Client, config: Config) -> bool {
 	client.message_cache.on_remove_user_data = &client.allocator
 	client.event_handlers = make(map[string][dynamic]Event_Listener, allocator = client.allocator)
 	client.command_registry = make(map[string]Command_Registration, allocator = client.allocator)
-	client.component_registry = make(map[string]Component_Registration, allocator = client.allocator)
+	client.component_registry = make(
+		map[string]Component_Registration,
+		allocator = client.allocator,
+	)
 	client.known_guilds = make(map[api.Snowflake]int, allocator = client.allocator)
 	client.identify_log = make([dynamic]time.Time, allocator = client.allocator)
 	client.latency_history = make([dynamic]time.Duration, allocator = context.allocator)
@@ -175,7 +192,8 @@ client_init :: proc(client: ^Client, config: Config) -> bool {
 	thread.pool_init(&client.worker_pool, context.allocator, thread_count = thread_count)
 	thread.pool_start(&client.worker_pool)
 
-	client.db_path = config.db_path != "" ? strings.clone(config.db_path, client.allocator) : strings.clone("bot.db", client.allocator)
+	client.db_path =
+		config.db_path != "" ? strings.clone(config.db_path, client.allocator) : strings.clone("bot.db", client.allocator)
 
 	if db, ok := db_init(client.db_path); ok {
 		client.db = db
@@ -183,9 +201,11 @@ client_init :: proc(client: ^Client, config: Config) -> bool {
 		fmt.eprintfln("Failed to initialize database at %s", client.db_path)
 	}
 
+
 	if !connect_gateway(client) {
 		return false
 	}
+
 
 	if api.discord_client_init(&client.rest_client, config.token) {
 		bot_info, fetch_ok := api.discord_request(
@@ -218,14 +238,24 @@ client_init :: proc(client: ^Client, config: Config) -> bool {
 }
 
 client_destroy :: proc(client: ^Client) {
+	logd("client_destroy: shutting down")
+
 	if !client._init_done {
 		if client.curl_handle != nil do curl.easy_cleanup(client.curl_handle)
 		api.discord_client_destroy(&client.rest_client)
 		return
 	}
 
+	sync.lock(&client.state_mutex)
 	client.is_running = false
+	sync.unlock(&client.state_mutex)
 	sync.cond_broadcast(&client.outbound_cond)
+
+	if client.heartbeat_thread != nil {
+		thread.join(client.heartbeat_thread)
+		client.heartbeat_thread = nil
+	}
+
 	thread.pool_join(&client.worker_pool)
 	thread.pool_destroy(&client.worker_pool)
 
@@ -267,33 +297,45 @@ client_destroy :: proc(client: ^Client) {
 }
 
 client_run :: proc(client: ^Client) {
-	backoff := time.Second
-	max_backoff := 60 * time.Second
+       backoff := time.Second
+       logd("client_run: entering run loop")
+       max_backoff := 60 * time.Second
 
-	for {
-		run_network_pump(client)
+       for {
+               run_network_pump(client)
 
-		if !client.is_reconnecting {
-			break
-		}
+               sync.lock(&client.state_mutex)
+               reconnecting := client.is_reconnecting
+               sync.unlock(&client.state_mutex)
 
-		client.is_reconnecting = false
-		fmt.printfln("Disconnected. Reconnecting in %v...", backoff)
-		time.sleep(backoff)
+               if !reconnecting {
+                       break
+               }
 
-		sync.lock(&client.outbound_mutex)
-		for queue.len(client.outbound_queue) > 0 {
-			delete(queue.pop_front(&client.outbound_queue))
-		}
-		sync.unlock(&client.outbound_mutex)
+               sync.lock(&client.state_mutex)
+               client.is_reconnecting = false
+               sync.unlock(&client.state_mutex)
 
-		if connect_gateway(client) {
-			backoff = time.Second
-		} else {
-			fmt.eprintln("Gateway reconnection failed, will retry")
-			if backoff < max_backoff {
-				backoff *= 2
-			}
-		}
-	}
+               // Reconnect loop: retry until connected or backoff exhausted
+               for {
+                       fmt.printfln("Disconnected. Reconnecting in %v...", backoff)
+                       time.sleep(backoff)
+
+                       sync.lock(&client.outbound_mutex)
+                       for queue.len(client.outbound_queue) > 0 {
+                               delete(queue.pop_front(&client.outbound_queue))
+                       }
+                       sync.unlock(&client.outbound_mutex)
+
+                       if connect_gateway(client) {
+                               backoff = time.Second
+                               break
+                       }
+
+                       fmt.eprintln("Gateway reconnection failed, will retry")
+                       if backoff < max_backoff {
+                               backoff *= 2
+                       }
+               }
+       }
 }

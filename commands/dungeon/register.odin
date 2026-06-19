@@ -5,8 +5,6 @@ import discord "../../discord"
 register_commands :: proc(client: ^discord.Client) {
 	init_sessions()
 
-	// Run DB migrations (tier rename etc.)
-	db_run_migrations(&client.db)
 
 	// Register all command and component handlers
 	register_dungeon_handlers(client)
