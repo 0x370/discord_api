@@ -32,14 +32,14 @@ handle_message_create :: proc(client: ^Client, d_bytes: []byte) {
 	}
 	defer deep_free(msg, context.allocator)
 
-	persistent := new(api.Message, allocator = client.allocator)
-	persistent^ = deep_clone(msg, client.allocator)
-
-	sync.lock(&client.cache_mutex)
-	lru.set(&client.message_cache, persistent.id, persistent)
-	sync.unlock(&client.cache_mutex)
-
 	if !msg.author.bot {
+		persistent := new(api.Message, allocator = client.allocator)
+		persistent^ = deep_clone(msg, client.allocator)
+
+		sync.lock(&client.cache_mutex)
+		lru.set(&client.message_cache, persistent.id, persistent)
+		sync.unlock(&client.cache_mutex)
+
 		_award_xp(client, msg.author.id, msg.author.username)
 	}
 

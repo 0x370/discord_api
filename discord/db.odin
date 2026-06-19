@@ -42,7 +42,7 @@ db_init :: proc(path: string) -> (Db, bool) {
 	if !_sql_exec_simple(conn, "CREATE TABLE IF NOT EXISTS dungeon_players (user_id TEXT PRIMARY KEY, equipped_char_id INTEGER DEFAULT 0, gold INTEGER NOT NULL DEFAULT 0, item_lootboxes INTEGER NOT NULL DEFAULT 0, current_floor INTEGER NOT NULL DEFAULT 1, class TEXT NOT NULL DEFAULT 'attacker', weapon_id INTEGER DEFAULT 0, head_id INTEGER DEFAULT 0, chest_id INTEGER DEFAULT 0, legs_id INTEGER DEFAULT 0, boots_id INTEGER DEFAULT 0)") {
 		return {}, false
 	}
-	if !_sql_exec_simple(conn, "CREATE TABLE IF NOT EXISTS dungeon_characters (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, name TEXT NOT NULL, tier TEXT NOT NULL, class TEXT NOT NULL, ability_name TEXT DEFAULT '', ability_desc TEXT DEFAULT '')") {
+	if !_sql_exec_simple(conn, "CREATE TABLE IF NOT EXISTS dungeon_characters (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, name TEXT NOT NULL, tier TEXT NOT NULL, class TEXT NOT NULL, weapon_compat TEXT DEFAULT 'sword', ability_name TEXT DEFAULT '', ability_desc TEXT DEFAULT '')") {
 		return {}, false
 	}
 	if !_sql_exec_simple(conn, "CREATE TABLE IF NOT EXISTS dungeon_items (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, item_type TEXT NOT NULL, tier TEXT NOT NULL, base_atk INTEGER DEFAULT 0, base_def INTEGER DEFAULT 0, bonus_hp INTEGER DEFAULT 0, bonus_atk INTEGER DEFAULT 0, bonus_def INTEGER DEFAULT 0, bonus_spd INTEGER DEFAULT 0, special TEXT DEFAULT '')") {
@@ -53,6 +53,11 @@ db_init :: proc(path: string) -> (Db, bool) {
 	}
 	_sql_exec_silent(conn, "ALTER TABLE dungeon_floor_progress ADD COLUMN encounters INTEGER DEFAULT 0")
 	_sql_exec_silent(conn, "ALTER TABLE dungeon_players ADD COLUMN item_lootboxes INTEGER NOT NULL DEFAULT 0")
+	_sql_exec_silent(conn, "ALTER TABLE dungeon_players ADD COLUMN char_lootboxes INTEGER NOT NULL DEFAULT 0")
+	_sql_exec_silent(conn, "ALTER TABLE dungeon_players ADD COLUMN daily_streak INTEGER NOT NULL DEFAULT 0")
+	_sql_exec_silent(conn, "ALTER TABLE dungeon_players ADD COLUMN last_daily_claim INTEGER NOT NULL DEFAULT 0")
+	_sql_exec_silent(conn, "ALTER TABLE dungeon_characters ADD COLUMN weapon_compat TEXT DEFAULT 'sword'")
+	_sql_exec_silent(conn, "UPDATE dungeon_characters SET weapon_compat = CASE WHEN class = 'healer' THEN 'staff' ELSE 'sword' END")
 	if !_sql_exec_simple(conn, "CREATE TABLE IF NOT EXISTS dungeon_saves (user_id TEXT PRIMARY KEY, data TEXT NOT NULL, saved_at TEXT NOT NULL DEFAULT (datetime('now')))") {
 		return {}, false
 	}

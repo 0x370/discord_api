@@ -2,6 +2,7 @@ package discord
 
 import "core:encoding/json"
 import "core:fmt"
+import "core:strings"
 
 import "api"
 
@@ -264,6 +265,126 @@ respond_with_components :: proc(ctx: ^Command_Context, content: string, embeds: 
 	return ok
 }
 
+respond_with_embed_and_files :: proc(
+	ctx: ^Command_Context,
+	content: string,
+	embeds: []api.Embed,
+	components: []api.Component,
+	files: []api.MultipartFile,
+) -> bool {
+	data := api.InteractionCallbackData{
+		content = content,
+		embeds = embeds,
+		components = components,
+	}
+	if len(files) > 0 {
+		attachments := make([]api.Attachment, len(files), context.temp_allocator)
+		for f, i in files {
+			attachments[i] = api.Attachment{
+				id = api.Snowflake(fmt.tprintf("%d", i)),
+				filename = f.filename,
+			}
+		}
+		data.attachments = attachments
+	}
+	response := api.InteractionResponse{
+		type = .CHANNEL_MESSAGE_WITH_SOURCE,
+		data = data,
+	}
+	payload, err := json.marshal(response, allocator = context.temp_allocator)
+	if err != nil {
+		fmt.eprintfln("Failed to marshal interaction response with files: %v", err)
+		return false
+	}
+	endpoint := fmt.tprintf("/interactions/%s/%s/callback", ctx.interaction.id, ctx.interaction.token)
+	resp, ok := api.discord_post_multipart(&ctx.client.rest_client, endpoint, payload, files)
+	if ok {
+		if resp.status_code < 200 || resp.status_code >= 300 {
+			fmt.eprintfln("respond_with_embed_and_files got HTTP %d: %s", resp.status_code, string(resp.body))
+		}
+		delete(resp.body)
+		return resp.status_code >= 200 && resp.status_code < 300
+	}
+	return false
+}
+
+edit_original_response_with_files :: proc(
+	client: ^Client,
+	interaction_token: string,
+	embeds: []api.Embed,
+	components: []api.Component,
+	files: []api.MultipartFile,
+) -> (message_id: string, ok: bool) {
+	data := api.InteractionCallbackData{
+		embeds = embeds,
+		components = components,
+	}
+	if len(files) > 0 {
+		attachments := make([]api.Attachment, len(files), context.temp_allocator)
+		for f, i in files {
+			attachments[i] = api.Attachment{
+				id = api.Snowflake(fmt.tprintf("%d", i)),
+				filename = f.filename,
+			}
+		}
+		data.attachments = attachments
+	}
+	payload, err := json.marshal(data, allocator = context.temp_allocator)
+	if err != nil {
+		fmt.eprintfln("Failed to marshal edit payload: %v", err)
+		return "", false
+	}
+	endpoint := fmt.tprintf("/webhooks/%s/%s/messages/@original", client.application_id, interaction_token)
+	resp, rok := api.discord_patch_multipart(&client.rest_client, endpoint, payload, files)
+	if !rok {
+		fmt.eprintfln("edit_original_response_with_files PATCH failed")
+		return "", false
+	}
+	defer delete(resp.body)
+	if resp.status_code < 200 || resp.status_code >= 300 {
+		fmt.eprintfln("edit_original_response_with_files PATCH status=%d body: %s", resp.status_code, string(resp.body))
+		return "", false
+	}
+	msg: api.Message
+	if json.unmarshal(resp.body, &msg, allocator = context.temp_allocator) == nil && msg.id != "" {
+		return strings.clone(msg.id), true
+	}
+	return "", true
+}
+
+create_followup_with_files :: proc(
+	client: ^Client,
+	interaction_token: string,
+	embeds: []api.Embed,
+	files: []api.MultipartFile,
+) -> bool {
+	data := api.InteractionCallbackData{embeds = embeds}
+	if len(files) > 0 {
+		attachments := make([]api.Attachment, len(files), context.temp_allocator)
+		for f, i in files {
+			attachments[i] = api.Attachment{
+				id = api.Snowflake(fmt.tprintf("%d", i)),
+				filename = f.filename,
+			}
+		}
+		data.attachments = attachments
+	}
+	payload, err := json.marshal(data, allocator = context.temp_allocator)
+	if err != nil {
+		fmt.eprintfln("Failed to marshal followup payload: %v", err)
+		return false
+	}
+	endpoint := fmt.tprintf("/webhooks/%s/%s", client.application_id, interaction_token)
+	resp, ok := api.discord_post_multipart(&client.rest_client, endpoint, payload, files)
+	if !ok { fmt.eprintfln("create_followup_with_files POST failed"); return false }
+	defer delete(resp.body)
+	if resp.status_code < 200 || resp.status_code >= 300 {
+		fmt.eprintfln("create_followup_with_files got HTTP %d: %s", resp.status_code, string(resp.body))
+		return false
+	}
+	return true
+}
+
 defer_response :: proc(ctx: ^Command_Context, ephemeral: bool) -> (bool, i64) {
 	data: api.InteractionCallbackData
 	if ephemeral {
@@ -314,8 +435,13 @@ respond_component :: proc(ctx: ^Component_Context, embeds: []api.Embed, componen
 	}
 	endpoint := fmt.tprintf("/interactions/%s/%s/callback", ctx.interaction.id, ctx.interaction.token)
 	resp, ok := api.discord_post(&ctx.client.rest_client, endpoint, body)
-	if ok do delete(resp.body)
-	return ok
+	if !ok { return false }
+	defer delete(resp.body)
+	if resp.status_code < 200 || resp.status_code >= 300 {
+		fmt.eprintfln("[respond_component] HTTP %d: %s", resp.status_code, string(resp.body))
+		return false
+	}
+	return true
 }
 
 defer_component_update :: proc(ctx: ^Component_Context) -> bool {

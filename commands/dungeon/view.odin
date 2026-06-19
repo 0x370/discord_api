@@ -4,26 +4,34 @@ import "core:fmt"
 import "core:strings"
 import api "../../discord/api"
 
-build_profile_embed :: proc(p: ^Player, char: CollectedCharacter, items: map[i64]ItemInstance) -> api.Embed {
+build_profile_embed :: proc(p: ^Player, char: CollectedCharacter, items: map[i64]ItemInstance, image_url: string = "") -> api.Embed {
 	base := CLASS_BASE_STATS[p.class]
 	tier_mult := TIER_CONFIGS[char.tier].mult
-	hp  := int(f64(base.hp) * tier_mult)
-	atk := int(f64(base.atk) * tier_mult)
-	def := int(f64(base.def) * tier_mult)
-	for _, item in items {
-		hp  += item.bonus_hp
-		atk += item.base_atk + item.bonus_atk
-		def += item.base_def + item.bonus_def
+	weapon_match := false
+	if weapon, ok := items[p.weapon_id]; ok {
+		weapon_match = weapon.item_type == .SWORD && char.weapon_compat == .SWORD || weapon.item_type == .STAFF && char.weapon_compat == .STAFF
 	}
+	hp, atk, def, _ := calc_player_stats(base, tier_mult, items, weapon_match)
+
+	total_spd := 0
+	total_crit := 0
+	for _, it in items {
+		total_spd += it.bonus_spd
+		total_crit += it.bonus_crit
+	}
+	dodge_pct := total_spd / 2
+	if dodge_pct > 35 do dodge_pct = 35
 
 	class_emoji := CLASS_EMOJIS[p.class]
 	tier_label := TIER_LABELS[char.tier]
 	class_name := CLASS_NAMES[p.class]
 
 	lines: [8]string
-	lines[0] = fmt.tprintf("**%s** %s", char.name, char.tier == .S ? "⭐" : "")
+	lines[0] = fmt.tprintf("**%s** %s", char.name, char.tier == .MYTHICAL ? "🌟" : "")
 	lines[1] = fmt.tprintf("%s %s | %s Tier", class_emoji, class_name, tier_label)
-	lines[2] = fmt.tprintf("❤️ HP: %d | ⚔️ ATK: %d | 🛡️ DEF: %d", hp, atk, def)
+	spd_str := total_spd > 0 ? fmt.tprintf(" | 👟 SPD: %d (%d%% dodge)", total_spd, dodge_pct) : ""
+	crit_str := total_crit > 0 ? fmt.tprintf(" | 💢 Crit: %d%%", total_crit) : ""
+	lines[2] = fmt.tprintf("❤️ HP: %d | ⚔️ ATK: %d | 🛡️ DEF: %d%s%s", hp, atk, def, spd_str, crit_str)
 	lines[3] = fmt.tprintf("💰 Gold: %d | 📦 Lootboxes: %d | 🏔️ Floor: %d", p.gold, p.item_lootboxes, p.current_floor)
 	if char.ability_name != "" {
 		lines[4] = fmt.tprintf("✨ %s: %s", char.ability_name, char.ability_desc)
@@ -64,25 +72,35 @@ build_profile_embed :: proc(p: ^Player, char: CollectedCharacter, items: map[i64
 		title       = "⚔️ Dungeon Profile",
 		color       = 0x9b59b6,
 		fields      = fields,
+		image       = image_url != "" ? api.EmbedImage{url = image_url} : api.EmbedImage{},
 	}
 }
 
-build_battle_embed :: proc(state: ^CombatState) -> (api.Embed, []api.Component) {
+build_battle_embed :: proc(state: ^CombatState, monster_image_url: string = "") -> (api.Embed, []api.Component) {
 	hp_pct := 0
 	if state.player.max_hp > 0 do hp_pct = state.player.hp * 10 / state.player.max_hp
-	hp_bar := fmt.tprintf("%s%s %d/%d", strings.repeat("█", hp_pct), strings.repeat("░", 10 - hp_pct), state.player.hp, state.player.max_hp)
+	shield_str := state.shield > 0 ? fmt.tprintf(" 🛡️%d", state.shield) : ""
+	hp_bar := fmt.tprintf("%s%s %d/%d HP%s", strings.repeat("█", hp_pct), strings.repeat("░", 10 - hp_pct), state.player.hp, state.player.max_hp, shield_str)
+
+	mp_pct := 0
+	if state.player.max_mana > 0 do mp_pct = state.player.mana * 10 / state.player.max_mana
+	mp_bar := fmt.tprintf("%s%s %d/%d MP", strings.repeat("█", mp_pct), strings.repeat("░", 10 - mp_pct), state.player.mana, state.player.max_mana)
 
 	m := state.monster
 	mhp_pct := 0
 	if m.max_hp > 0 do mhp_pct = m.hp * 10 / m.max_hp
-	mhp_bar := fmt.tprintf("%s%s %d/%d", strings.repeat("█", mhp_pct), strings.repeat("░", 10-mhp_pct), m.hp, m.max_hp)
+	mhp_bar := fmt.tprintf("%s%s %d/%d HP", strings.repeat("█", mhp_pct), strings.repeat("░", 10-mhp_pct), m.hp, m.max_hp)
 
-	rare_tag := m.rare ? " ✨Rare" : ""
-	boss_tag := m.boss ? " 👑Boss" : ""
+	mmp_pct := 0
+	if m.max_mana > 0 do mmp_pct = m.mana * 10 / m.max_mana
+	mmp_bar := fmt.tprintf("%s%s %d/%d MP", strings.repeat("█", mmp_pct), strings.repeat("░", 10-mmp_pct), m.mana, m.max_mana)
+
+	rare_tag := m.kind == .Rare ? " ✨Rare" : ""
+	boss_tag := m.kind == .Boss ? " 👑Boss" : ""
 
 	log_text := ""
 	if len(state.log) > 0 {
-		start := len(state.log) - min(5, len(state.log))
+		start := len(state.log) - min(10, len(state.log))
 		count := len(state.log) - start
 		log_parts := make([]string, count, context.temp_allocator)
 		for i in 0 ..< count do log_parts[i] = state.log[start + i]
@@ -91,8 +109,9 @@ build_battle_embed :: proc(state: ^CombatState) -> (api.Embed, []api.Component) 
 
 	fields_len := log_text != "" ? 3 : 2
 	fields := make([]api.EmbedField, fields_len, context.temp_allocator)
-	fields[0] = api.EmbedField{name = state.player.name, value = hp_bar, _inline = false}
-	fields[1] = api.EmbedField{name = fmt.tprintf("%s %s%s%s", m.emoji, m.name, rare_tag, boss_tag), value = mhp_bar, _inline = false}
+	player_name := state.player.name != "" ? state.player.name : "Unknown"
+	fields[0] = api.EmbedField{name = player_name, value = fmt.tprintf("%s\n%s", hp_bar, mp_bar), _inline = false}
+	fields[1] = api.EmbedField{name = fmt.tprintf("%s %s%s%s", m.emoji, m.name, rare_tag, boss_tag), value = fmt.tprintf("%s\n%s", mhp_bar, mmp_bar), _inline = false}
 
 	title := fmt.tprintf("⚔️ Dungeon — Floor %d · Turn %d", state.floor, state.turn)
 	color := 0xe67e22
@@ -106,6 +125,7 @@ build_battle_embed :: proc(state: ^CombatState) -> (api.Embed, []api.Component) 
 	}
 
 	embed := api.Embed{title = title, color = color, fields = fields}
+	if monster_image_url != "" do embed.image = api.EmbedImage{url = monster_image_url}
 
 	if log_text != "" {
 		embed.fields[len(embed.fields)-1] = api.EmbedField{name = "Combat Log", value = log_text, _inline = false}
@@ -115,22 +135,28 @@ build_battle_embed :: proc(state: ^CombatState) -> (api.Embed, []api.Component) 
 		buttons := make([dynamic]api.Component, 0, 4, context.temp_allocator)
 		append(&buttons, api.ButtonComponent{type = .BUTTON, style = .PRIMARY,  custom_id = "dungeon_attack", label = "⚔️ Attack"})
 
-		btn_label := state.ability_cooldown > 0 ? fmt.tprintf("⚡ %s (CD: %d)", state.class_ability_name, state.ability_cooldown) : fmt.tprintf("⚡ %s", state.class_ability_name)
-		btn_style := state.ability_cooldown > 0 ? api.ButtonStyle.SECONDARY : api.ButtonStyle.SUCCESS
-		btn_disabled := state.ability_cooldown > 0
+		btn_label: string
+		if state.ability_cooldown > 0 {
+			btn_label = fmt.tprintf("⚡ %s (CD: %d)", state.class_ability_name, state.ability_cooldown)
+		} else {
+			btn_label = fmt.tprintf("⚡ %s (%d MP)", state.class_ability_name, state.ability_mana_cost)
+		}
+		btn_disabled := state.ability_cooldown > 0 || state.player.mana < state.ability_mana_cost
+		btn_style := btn_disabled ? api.ButtonStyle.SECONDARY : api.ButtonStyle.SUCCESS
 		append(&buttons, api.ButtonComponent{type = .BUTTON, style = btn_style, custom_id = "dungeon_ability", label = btn_label, disabled = btn_disabled})
 
+		passive := _is_passive_char_ability(state.char_ability_name)
 		char_ability_label := "✨ Character Ability"
 		if state.char_ability_name != "" {
-			if state.char_ability_name == "Phoenix Rebirth" {
-				char_ability_label = fmt.tprintf("🔥 %s", state.char_ability_name)
+			if passive {
+				char_ability_label = fmt.tprintf("🔒 %s (Passive)", state.char_ability_name)
 			} else if state.char_ability_cooldown > 0 {
 				char_ability_label = fmt.tprintf("✨ %s (CD: %d)", state.char_ability_name, state.char_ability_cooldown)
 			} else {
-				char_ability_label = fmt.tprintf("✨ %s", state.char_ability_name)
+				char_ability_label = fmt.tprintf("✨ %s (%d MP)", state.char_ability_name, state.char_ability_mana_cost)
 			}
 		}
-		char_disabled := state.char_ability_cooldown > 0 || state.char_ability_name == "" || state.char_ability_name == "Phoenix Rebirth"
+		char_disabled := passive || state.char_ability_cooldown > 0 || state.char_ability_name == "" || state.player.mana < state.char_ability_mana_cost
 		char_style := char_disabled ? api.ButtonStyle.SECONDARY : api.ButtonStyle.SUCCESS
 		append(&buttons, api.ButtonComponent{type = .BUTTON, style = char_style, custom_id = "dungeon_char_ability", label = char_ability_label, disabled = char_disabled})
 
@@ -145,7 +171,7 @@ build_battle_embed :: proc(state: ^CombatState) -> (api.Embed, []api.Component) 
 	return embed, {}
 }
 
-build_reward_embed :: proc(state: ^CombatState) -> api.Embed {
+build_reward_embed :: proc(state: ^CombatState, chest_image_url: string = "", encounters: int = 0, floor_advanced: bool = false) -> api.Embed {
 	lines := make([dynamic]string, context.temp_allocator)
 	append(&lines, fmt.tprintf("🏔️ Floor %d cleared!", state.floor))
 	append(&lines, fmt.tprintf("⚔️ Turns taken: %d", state.turn))
@@ -153,18 +179,27 @@ build_reward_embed :: proc(state: ^CombatState) -> api.Embed {
 	append(&lines, "**Rewards:**")
 	append(&lines, fmt.tprintf("💰 **%d** Gold", state.reward_gold))
 	append(&lines, fmt.tprintf("📦 **%d** Item Lootbox(es)", state.reward_lootboxes))
+	append(&lines, "")
+	if floor_advanced {
+		append(&lines, fmt.tprintf("⬆️ **Floor advanced to %d!**", state.floor + 1))
+	} else if state.boss_floor {
+		append(&lines, "⚠️ Boss floor — floor does not advance on replay.")
+	} else {
+		append(&lines, fmt.tprintf("📍 Encounters: **%d/3** to advance", encounters))
+	}
 
 	return api.Embed{
 		title       = "🎉 Victory!",
 		color       = 0xf1c40f,
 		description = strings.join(lines[:], "\n"),
+		thumbnail   = chest_image_url != "" ? api.EmbedThumbnail{url = chest_image_url} : api.EmbedThumbnail{},
 	}
 }
 
-build_character_embed :: proc(char: CollectedCharacter, page: int, total: int) -> (api.Embed, []api.Component) {
+build_character_embed :: proc(char: CollectedCharacter, page: int, total: int, image_url: string = "") -> (api.Embed, []api.Component) {
 	tier_label := TIER_LABELS[char.tier]
-	class_name := CLASS_NAMES[char.class]
-	class_emoji := CLASS_EMOJIS[char.class]
+	class_name := WEAPON_COMPAT_NAMES[char.weapon_compat]
+	class_emoji := WEAPON_COMPAT_EMOJIS[char.weapon_compat]
 
 	lines: [6]string
 	lines[0] = fmt.tprintf("**%s**", char.name)
@@ -179,6 +214,7 @@ build_character_embed :: proc(char: CollectedCharacter, page: int, total: int) -
 		title       = fmt.tprintf("📜 Character Gallery (%d/%d)", page, total),
 		description = strings.join(lines[:], "\n"),
 		color       = TIER_EMBED_COLORS[char.tier],
+		image       = image_url != "" ? api.EmbedImage{url = image_url} : api.EmbedImage{},
 	}
 
 	if total <= 1 do return embed, {}
@@ -194,7 +230,7 @@ build_character_embed :: proc(char: CollectedCharacter, page: int, total: int) -
 	return embed, comps[:]
 }
 
-build_item_embed :: proc(item: ItemInstance, page: int, total: int) -> (api.Embed, []api.Component) {
+build_item_embed :: proc(item: ItemInstance, page: int, total: int, image_url: string = "") -> (api.Embed, []api.Component) {
 	tier_label := TIER_LABELS[item.tier]
 	tier_name  := TIER_CONFIGS[item.tier].name
 	item_emoji := ITEM_EMOJIS[item.item_type]
@@ -211,6 +247,7 @@ build_item_embed :: proc(item: ItemInstance, page: int, total: int) -> (api.Embe
 	if item.bonus_atk > 0 do append(&affix_lines, fmt.tprintf("⚔️ +%d ATK", item.bonus_atk))
 	if item.bonus_def > 0 do append(&affix_lines, fmt.tprintf("🛡️ +%d DEF", item.bonus_def))
 	if item.bonus_spd > 0 do append(&affix_lines, fmt.tprintf("💨 +%d SPD", item.bonus_spd))
+	if item.bonus_crit > 0 do append(&affix_lines, fmt.tprintf("💢 +%d%% Crit", item.bonus_crit))
 	if len(affix_lines) > 0 {
 		lines[5] = fmt.tprintf("**Affixes:** %s", strings.join(affix_lines[:], ", "))
 	}
@@ -222,6 +259,7 @@ build_item_embed :: proc(item: ItemInstance, page: int, total: int) -> (api.Embe
 		title       = fmt.tprintf("🎒 Item Inventory (%d/%d)", page, total),
 		description = strings.join(lines[:], "\n"),
 		color       = TIER_EMBED_COLORS[item.tier],
+		image       = image_url != "" ? api.EmbedImage{url = image_url} : api.EmbedImage{},
 	}
 
 	if total <= 1 do return embed, {}
@@ -237,8 +275,59 @@ build_item_embed :: proc(item: ItemInstance, page: int, total: int) -> (api.Embe
 	return embed, comps[:]
 }
 
-build_lootbox_result_embed :: proc(results: []CharacterGachaResult, page: int, total: int) -> (api.Embed, []api.Component) {
-	return build_lootbox_result_embed_single(results[page - 1], page, total)
+build_lootbox_result_embed :: proc(results: []CharacterGachaResult, image_url: string = "") -> (api.Embed, []api.Component) {
+	best_tier := results[0].tier
+	for r in results do if r.tier < best_tier do best_tier = r.tier
+
+	lines := make([dynamic]string, context.temp_allocator)
+	for r, i in results {
+		weapon_emoji := WEAPON_COMPAT_EMOJIS[r.weapon_compat]
+		weapon_name := WEAPON_COMPAT_NAMES[r.weapon_compat]
+		tier_label := TIER_LABELS[r.tier]
+		append(&lines, fmt.tprintf("%d. **%s** — %s Tier %s %s", i + 1, r.name, tier_label, weapon_emoji, weapon_name))
+		if r.ability_name != "" {
+			append(&lines, fmt.tprintf("   ✨ %s: %s", r.ability_name, r.ability_desc))
+		}
+		if r.tier == .MYTHICAL do append(&lines, "   🌟 **MYTHICAL!**")
+	}
+
+	embed := api.Embed{
+		title       = fmt.tprintf("📦 Lootbox Results (%d)", len(results)),
+		description = strings.join(lines[:], "\n"),
+		color       = TIER_EMBED_COLORS[best_tier],
+		thumbnail   = image_url != "" ? api.EmbedThumbnail{url = image_url} : api.EmbedThumbnail{},
+	}
+	return embed, {}
+}
+
+build_lootbox_item_embed :: proc(items: []ItemGachaResult, image_url: string = "") -> api.Embed {
+	best_tier := items[0].tier
+	for it in items do if it.tier < best_tier do best_tier = it.tier
+
+	lines := make([dynamic]string, context.temp_allocator)
+	for it, i in items {
+		tier_label := TIER_LABELS[it.tier]
+		item_emoji := ITEM_EMOJIS[it.item_type]
+		item_name := ITEM_NAMES[it.item_type]
+		append(&lines, fmt.tprintf("%d. %s %s — %s Tier", i + 1, item_emoji, item_name, tier_label))
+		stat_parts := make([dynamic]string, context.temp_allocator)
+		if it.base_atk > 0 do append(&stat_parts, fmt.tprintf("⚔️ ATK:%+d", it.base_atk))
+		if it.base_def > 0 do append(&stat_parts, fmt.tprintf("🛡️ DEF:%+d", it.base_def))
+		if it.bonus_hp > 0 do append(&stat_parts, fmt.tprintf("❤️+%d", it.bonus_hp))
+		if it.bonus_atk > 0 do append(&stat_parts, fmt.tprintf("⚔️+%d", it.bonus_atk))
+		if it.bonus_def > 0 do append(&stat_parts, fmt.tprintf("🛡️+%d", it.bonus_def))
+		if it.bonus_spd > 0 do append(&stat_parts, fmt.tprintf("💨+%d", it.bonus_spd))
+		if it.bonus_crit > 0 do append(&stat_parts, fmt.tprintf("💢+%d", it.bonus_crit))
+		if it.special != "" do append(&stat_parts, fmt.tprintf("✨ %s", it.special))
+		if len(stat_parts) > 0 do append(&lines, fmt.tprintf("   %s", strings.join(stat_parts[:], " ")))
+	}
+
+	return api.Embed{
+		title       = fmt.tprintf("🎒 Lootbox Results (%d)", len(items)),
+		description = strings.join(lines[:], "\n"),
+		color       = TIER_EMBED_COLORS[best_tier],
+		thumbnail   = image_url != "" ? api.EmbedThumbnail{url = image_url} : api.EmbedThumbnail{},
+	}
 }
 
 LIST_PAGE_SIZE :: 10
@@ -261,7 +350,7 @@ build_character_list_embed :: proc(chars: []CollectedCharacter, page: int) -> (a
 			ability_tag = fmt.tprintf(" ✨ %s", c.ability_name)
 		}
 		append(&lines, fmt.tprintf("%d. %s — %s Tier %s%s — ID: %d",
-			i + 1, c.name, TIER_LABELS[c.tier], CLASS_NAMES[c.class], ability_tag, c.id))
+			i + 1, c.name, TIER_LABELS[c.tier], WEAPON_COMPAT_NAMES[c.weapon_compat], ability_tag, c.id))
 	}
 
 	embed := api.Embed{
@@ -299,6 +388,7 @@ build_item_list_embed :: proc(items: []ItemInstance, page: int) -> (api.Embed, [
 			affix_parts := make([dynamic]string, context.temp_allocator)
 			if it.bonus_hp  > 0 do append(&affix_parts, fmt.tprintf("❤️+%d", it.bonus_hp))
 			if it.bonus_atk > 0 do append(&affix_parts, fmt.tprintf("⚔️+%d", it.bonus_atk))
+			if it.bonus_crit > 0 do append(&affix_parts, fmt.tprintf("💢+%d", it.bonus_crit))
 			if it.bonus_def > 0 do append(&affix_parts, fmt.tprintf("🛡️+%d", it.bonus_def))
 			if it.bonus_spd > 0 do append(&affix_parts, fmt.tprintf("💨+%d", it.bonus_spd))
 			affix_str = strings.join(affix_parts[:], " ")
@@ -330,24 +420,25 @@ build_item_list_embed :: proc(items: []ItemInstance, page: int) -> (api.Embed, [
 	return embed, comps[:]
 }
 
-build_lootbox_result_embed_single :: proc(r: CharacterGachaResult, page: int, total: int) -> (api.Embed, []api.Component) {
+build_lootbox_result_embed_single :: proc(r: CharacterGachaResult, page: int, total: int, image_url: string = "") -> (api.Embed, []api.Component) {
 	tier_label := TIER_LABELS[r.tier]
-	class_emoji := CLASS_EMOJIS[r.class]
-	class_name := CLASS_NAMES[r.class]
+	weapon_emoji := WEAPON_COMPAT_EMOJIS[r.weapon_compat]
+	weapon_name := WEAPON_COMPAT_NAMES[r.weapon_compat]
 
 	lines: [5]string
 	lines[0] = fmt.tprintf("**%s**", r.name)
-	lines[1] = fmt.tprintf("%s Tier — %s %s", tier_label, class_emoji, class_name)
+	lines[1] = fmt.tprintf("%s Tier — %s %s", tier_label, weapon_emoji, weapon_name)
 	if r.ability_name != "" {
 		lines[2] = fmt.tprintf("✨ **%s**", r.ability_name)
 		lines[3] = r.ability_desc
 	}
-	lines[4] = r.tier == .S ? "🎊 **LEGENDARY PULL!**" : ""
+	lines[4] = r.tier == .MYTHICAL ? "🌟 **MYTHICAL PULL!**" : ""
 
 	embed := api.Embed{
 		title       = fmt.tprintf("📦 Lootbox Results (%d/%d)", page, total),
 		description = strings.join(lines[:], "\n"),
 		color       = TIER_EMBED_COLORS[r.tier],
+		thumbnail   = image_url != "" ? api.EmbedThumbnail{url = image_url} : api.EmbedThumbnail{},
 	}
 
 	if total <= 1 do return embed, {}

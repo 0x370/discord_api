@@ -9,19 +9,19 @@ generate_character_lootbox :: proc() -> [LOOTBOX_CHARACTER_COUNT]CharacterGachaR
 	for i in 0 ..< LOOTBOX_CHARACTER_COUNT {
 		tier := _roll_tier()
 		name := _random_name()
-		class_idx := rand.int_max(2)
-		class: Class_Type = class_idx == 0 ? .ATTACKER : .HEALER
+		compat_idx := rand.int_max(2)
+		weapon_compat: Weapon_Compat = compat_idx == 0 ? .SWORD : .STAFF
 
 		ability_name := ""
 		ability_desc := ""
-		if tier == .S {
+		if tier == .MYTHICAL {
 			ability_name, ability_desc = _random_s_ability()
 		}
 
 		results[i] = CharacterGachaResult{
 			name         = name,
 			tier         = tier,
-			class        = class,
+			weapon_compat = weapon_compat,
 			ability_name = strings.clone(ability_name),
 			ability_desc = strings.clone(ability_desc),
 		}
@@ -30,7 +30,7 @@ generate_character_lootbox :: proc() -> [LOOTBOX_CHARACTER_COUNT]CharacterGachaR
 }
 
 @(private)
-generate_item_lootbox :: proc() -> [LOOTBOX_ITEM_COUNT]ItemGachaResult {
+generate_item_lootbox :: proc(floor: int) -> [LOOTBOX_ITEM_COUNT]ItemGachaResult {
 	results: [LOOTBOX_ITEM_COUNT]ItemGachaResult
 	for i in 0 ..< LOOTBOX_ITEM_COUNT {
 		tier := _roll_tier()
@@ -40,11 +40,8 @@ generate_item_lootbox :: proc() -> [LOOTBOX_ITEM_COUNT]ItemGachaResult {
 		base_atk := int(f64(ITEM_BASE_ATK[item_type]) * cfg.mult)
 		base_def := int(f64(ITEM_BASE_DEF[item_type]) * cfg.mult)
 
-		affixes := _generate_affixes(tier)
-		special := ""
-		if tier == .S {
-			special = _random_special_effect()
-		}
+		affixes := _generate_affixes(tier, floor)
+		special := _random_specials(item_type, tier, floor)
 
 		results[i] = ItemGachaResult{
 			item_type = item_type,
@@ -55,6 +52,7 @@ generate_item_lootbox :: proc() -> [LOOTBOX_ITEM_COUNT]ItemGachaResult {
 			bonus_atk = affixes.atk,
 			bonus_def = affixes.def,
 			bonus_spd = affixes.spd,
+			bonus_crit = affixes.crit,
 			special   = strings.clone(special),
 		}
 	}
@@ -68,7 +66,7 @@ _roll_item_type :: proc() -> Item_Type {
 }
 
 @(private)
-_generate_affixes :: proc(tier: Tier) -> struct { hp, atk, def, spd: int } {
+_generate_affixes :: proc(tier: Tier, floor: int) -> struct { hp, atk, def, spd, crit: int } {
 	cfg := TIER_CONFIGS[tier]
 	if cfg.max_affixes == 0 do return {}
 
@@ -77,7 +75,7 @@ _generate_affixes :: proc(tier: Tier) -> struct { hp, atk, def, spd: int } {
 		count += rand.int_max(cfg.max_affixes - cfg.min_affixes + 1)
 	}
 
-	all_affixes := []Affix{.HP, .ATK, .DEF, .SPD}
+	all_affixes := []Affix{.HP, .ATK, .DEF, .SPD, .CRIT}
 	picked := make([dynamic]Affix, context.temp_allocator)
 
 	for _ in 0 ..< count {
@@ -85,17 +83,21 @@ _generate_affixes :: proc(tier: Tier) -> struct { hp, atk, def, spd: int } {
 		append(&picked, all_affixes[idx])
 	}
 
-	result: struct { hp, atk, def, spd: int }
+	result: struct { hp, atk, def, spd, crit: int }
 	for aff in picked {
 		val := cfg.affix_min
 		if cfg.affix_max > cfg.affix_min {
 			val += rand.int_max(cfg.affix_max - cfg.affix_min + 1)
 		}
+		floor_mult := 1.0 + f64(floor) * 0.03
+		val = int(f64(val) * floor_mult)
+		if val < 1 do val = 1
 		switch aff {
 		case .HP:  result.hp += val
 		case .ATK: result.atk += val
 		case .DEF: result.def += val
 		case .SPD: result.spd += val
+		case .CRIT: result.crit += val
 		}
 	}
 	return result

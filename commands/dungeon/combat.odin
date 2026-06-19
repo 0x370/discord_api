@@ -4,27 +4,41 @@ import "core:fmt"
 import "core:math/rand"
 import "core:strings"
 
-build_combat_player :: proc(p: ^Player, char: ^CollectedCharacter, items: map[i64]ItemInstance) -> CombatPlayer {
-	base := CLASS_BASE_STATS[p.class]
-	tier_mult := TIER_CONFIGS[char.tier].mult
-
-	hp  := int(f64(base.hp) * tier_mult)
-	atk := int(f64(base.atk) * tier_mult)
-	def := int(f64(base.def) * tier_mult)
-
+calc_player_stats :: proc(base: Class_Base, tier_mult: f64, items: map[i64]ItemInstance, weapon_match: bool) -> (hp, atk, def, mana: int) {
+	hp   = int(f64(base.hp) * tier_mult)
+	atk  = int(f64(base.atk) * tier_mult)
+	def  = int(f64(base.def) * tier_mult)
+	mana = int(f64(base.mana) * tier_mult)
 	for _, item in items {
 		hp  += item.bonus_hp
 		atk += item.base_atk + item.bonus_atk
 		def += item.base_def + item.bonus_def
 	}
+	if weapon_match do atk = atk * 125 / 100
+	return
+}
+
+build_combat_player :: proc(p: ^Player, char: ^CollectedCharacter, items: map[i64]ItemInstance) -> CombatPlayer {
+	base := CLASS_BASE_STATS[p.class]
+	tier_mult := TIER_CONFIGS[char.tier].mult
+
+	weapon_match := false
+	if weapon, ok := items[p.weapon_id]; ok {
+		weapon_match = weapon.item_type == .SWORD && char.weapon_compat == .SWORD || weapon.item_type == .STAFF && char.weapon_compat == .STAFF
+	}
+
+	hp, atk, def, mana := calc_player_stats(base, tier_mult, items, weapon_match)
 
 	return CombatPlayer{
-		name   = char.name,
-		class  = p.class,
-		max_hp = hp,
-		hp     = hp,
-		atk    = atk,
-		def    = def,
+		name       = char.name,
+		class      = p.class,
+		max_hp     = hp,
+		hp         = hp,
+		atk        = atk,
+		def        = def,
+		max_mana   = mana,
+		mana       = 0,
+		mana_regen = base.mana_regen,
 	}
 }
 
@@ -32,12 +46,12 @@ generate_monster :: proc(floor: int, rare_mult: f64) -> CombatMonster {
 	boss_floor := floor % BOSS_FLOOR_INTERVAL == 0
 
 	if boss_floor {
-		tmpl := _roll_random_boss()
+		tmpl := _get_boss_for_floor(floor)
 		level := floor
 		hp  := tmpl.base_hp + tmpl.scale_hp * level
 		atk := tmpl.base_atk + tmpl.scale_atk * level
 		def := tmpl.base_def + tmpl.scale_def * level
-		return CombatMonster{name = tmpl.name, emoji = tmpl.emoji, boss = true, rare = false, hp = hp, max_hp = hp, atk = atk, def = def}
+		return CombatMonster{name = tmpl.name, emoji = tmpl.emoji, kind = .Boss, hp = hp, max_hp = hp, atk = atk, def = def, max_mana = tmpl.base_mana, mana = 0, mana_regen = tmpl.mana_regen}
 	}
 
 	is_rare := rand.float64() < RARE_MONSTER_CHANCE * rare_mult
@@ -52,7 +66,7 @@ generate_monster :: proc(floor: int, rare_mult: f64) -> CombatMonster {
 	hp  := tmpl.base_hp + tmpl.scale_hp * level
 	atk := tmpl.base_atk + tmpl.scale_atk * level
 	def := tmpl.base_def + tmpl.scale_def * level
-	return CombatMonster{name = tmpl.name, emoji = tmpl.emoji, boss = false, rare = is_rare, hp = hp, max_hp = hp, atk = atk, def = def}
+	return CombatMonster{name = tmpl.name, emoji = tmpl.emoji, kind = is_rare ? .Rare : .Normal, hp = hp, max_hp = hp, atk = atk, def = def, max_mana = tmpl.base_mana, mana = 0, mana_regen = tmpl.mana_regen}
 }
 
 emit :: proc(state: ^CombatState, event: CombatEvent) {
@@ -71,53 +85,128 @@ combat_deal_damage :: proc(atk: int, def: int) -> int {
 	return max(1, dmg + variance - dmg / 8)
 }
 
-combat_use_ability :: proc(state: ^CombatState) {
-	state.ability_cooldown = ABILITY_COOLDOWN
-	emit(state, .ON_ABILITY)
-
+@(private)
+_advance_turn :: proc(state: ^CombatState) {
 	state.turn += 1
+	state.bonus_attack_procs = 0
+	state.life_steal_total = 0
+	state.boss_resist_used = false
+	state.thorns_used = false
+	if state.stun_freeze_cooldown > 0 do state.stun_freeze_cooldown -= 1
+	if state.block_cooldown > 0 do state.block_cooldown -= 1
 	if state.monster.hp <= 0 {
 		emit(state, .ON_KILL)
 		state.state = .PLAYER_WON
 	}
 }
 
-combat_use_char_ability :: proc(state: ^CombatState) {
-	state.char_ability_cooldown = ABILITY_COOLDOWN
-	emit(state, .ON_DAMAGE_DEALT)
+combat_use_ability :: proc(state: ^CombatState) {
+	if state.player.mana < state.ability_mana_cost do return
+	state.player.mana -= state.ability_mana_cost
+	state.ability_cooldown = ABILITY_COOLDOWN
 	emit(state, .ON_ABILITY)
+	_advance_turn(state)
+}
 
-	state.turn += 1
-	if state.monster.hp <= 0 {
-		emit(state, .ON_KILL)
-		state.state = .PLAYER_WON
-	}
+combat_use_char_ability :: proc(state: ^CombatState) {
+	if state.player.mana < state.char_ability_mana_cost do return
+	state.player.mana -= state.char_ability_mana_cost
+	state.char_ability_cooldown = ABILITY_COOLDOWN
+	emit(state, .ON_ABILITY)
+	emit(state, .ON_DAMAGE_DEALT)
+	_advance_turn(state)
 }
 
 combat_basic_attack :: proc(state: ^CombatState) {
 	dmg := combat_deal_damage(state.player.atk, state.monster.def)
+
+	// Crit check
+	if state.crit_chance > 0 && rand.int_max(100) < state.crit_chance {
+		dmg = dmg * 2
+		log_fmt(state, "💢 **Critical Hit!**")
+	}
+
 	state.monster.hp -= dmg
 	if state.monster.hp < 0 do state.monster.hp = 0
+	state.last_damage_dealt = dmg
 	logd("[combat] basic_attack dmg=%d monster_hp=%d/%d", dmg, state.monster.hp, state.monster.max_hp)
 	log_fmt(state, "⚔️ **%s** attacked %s for **%d** damage!", state.player.name, state.monster.name, dmg)
 	emit(state, .ON_ATTACK)
 	emit(state, .ON_DAMAGE_DEALT)
-
-	state.turn += 1
-	if state.monster.hp <= 0 {
-		emit(state, .ON_KILL)
-		state.state = .PLAYER_WON
-	}
+	_advance_turn(state)
 }
-
 combat_monster_turn :: proc(state: ^CombatState) {
 	if state.monster.hp <= 0 do return
-	dmg := combat_deal_damage(state.monster.atk, state.player.def)
+
+	// Bleed tick
+	if state.monster_bleed > 0 {
+		bleed_dmg := state.monster.max_hp * 5 / 100
+		if bleed_dmg < 1 do bleed_dmg = 1
+		state.monster.hp -= bleed_dmg
+		if state.monster.hp < 0 do state.monster.hp = 0
+		state.monster_bleed -= 1
+		log_fmt(state, "🩸 **Bleed** ticked for **%d** damage! (%d turns left)", bleed_dmg, state.monster_bleed)
+		if state.monster.hp <= 0 {
+			_advance_turn(state)
+			return
+		}
+	}
+
+	// Freeze check
+	if state.monster_frozen > 0 {
+		state.monster_frozen -= 1
+		log_fmt(state, "❄️ %s is frozen and cannot act! (%d turns left)", state.monster.name, state.monster_frozen)
+		return
+	}
+
+	// Stun check
+	if state.monster_stunned {
+		state.monster_stunned = false
+		log_fmt(state, "😵 %s is stunned and cannot act!", state.monster.name)
+		return
+	}
+
+	// Compute monster ATK with debuff
+	monster_atk := state.monster.atk
+	if state.monster_atk_debuff {
+		monster_atk = state.monster_original_atk * 80 / 100
+	}
+
+	dmg := combat_deal_damage(monster_atk, state.player.def)
+	state.last_damage_taken = dmg
+
+	// Shield absorbs damage before HP
+	if state.shield > 0 {
+		if dmg <= state.shield {
+			state.shield -= dmg
+			log_fmt(state, "🛡️ **Shield** absorbed **%d** damage! (%d remaining)", dmg, state.shield)
+			return
+		} else {
+			dmg -= state.shield
+			log_fmt(state, "🛡️ **Shield** broke after absorbing **%d** damage!", state.shield)
+			state.shield = 0
+		}
+	}
+
+	// Block — negate entire hit
+	if state.block_charges > 0 {
+		state.block_charges -= 1
+		state.block_cooldown = 2
+		log_fmt(state, "🛡️ **Blocked!** The attack was negated!")
+		return
+	}
+
 	state.player.hp -= dmg
 	if state.player.hp < 0 do state.player.hp = 0
 	log_fmt(state, "%s %s attacked you for **%d** damage!", state.monster.emoji, state.monster.name, dmg)
 	logd("[combat] monster_turn dmg=%d player_hp=%d/%d", dmg, state.player.hp, state.player.max_hp)
 	emit(state, .ON_DAMAGE_TAKEN)
+
+	if state.monster.hp <= 0 {
+		emit(state, .ON_KILL)
+		state.state = .PLAYER_WON
+		return
+	}
 
 	if state.player.hp <= 0 {
 		emit(state, .ON_DEATH)
@@ -131,15 +220,26 @@ combat_monster_turn :: proc(state: ^CombatState) {
 
 combat_calculate_reward :: proc(state: ^CombatState) {
 	logd("[combat] calculate_reward reward_mult=%v", state.reward_mult)
-	if state.monster.boss {
+	if state.monster.kind == .Boss {
 		tmpl := _find_boss_template(state.monster.name)
 		gold := int(f64(tmpl.gold_min + rand.int_max(tmpl.gold_max - tmpl.gold_min + 1)) * state.reward_mult)
 		state.reward_gold = gold
 		state.reward_lootboxes = 2
 	} else {
-		state.reward_gold = int(f64(3 + rand.int_max(5) + state.floor) * state.reward_mult)
-		if rand.float64() < 0.15 * state.reward_mult do state.reward_lootboxes = 1
+		state.reward_gold = int(f64(2 + rand.int_max(3) + state.floor / 2) * state.reward_mult)
+		if rand.float64() < 0.08 * state.reward_mult do state.reward_lootboxes = 1
 	}
+}
+
+@(private)
+_regen_mana :: proc(state: ^CombatState) {
+	p := &state.player
+	p.mana += p.mana_regen
+	if p.mana > p.max_mana do p.mana = p.max_mana
+
+	m := &state.monster
+	m.mana += m.mana_regen
+	if m.mana > m.max_mana do m.mana = m.max_mana
 }
 
 register_hook :: proc(state: ^CombatState, event: CombatEvent, hook: CombatHook) {

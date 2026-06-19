@@ -12,7 +12,7 @@ Attachment :: struct {
 	height:              int              `json:"height,omitempty"`,
 	width:               int              `json:"width,omitempty"`,
 	placeholder:         string           `json:"placeholder,omitempty"`,
-	placeholder_version: string           `json:"placeholder_version,omitempty"`,
+	placeholder_version: int              `json:"placeholder_version,omitempty"`,
 	ephemeral:           bool             `json:"ephemeral,omitempty"`,
 	duration_secs:       int              `json:"duration_secs,omitempty"`,
 	waveform:            string           `json:"waveform,omitempty"`,

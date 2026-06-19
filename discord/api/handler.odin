@@ -46,6 +46,13 @@ Http_Method :: enum {
 	DELETE,
 }
 
+MultipartFile :: struct {
+	field_name: string,
+	filename:   string,
+	data:       []byte,
+	mime_type:  string,
+}
+
 @(private)
 _method_cstr := [Http_Method]cstring {
 	.GET    = "GET",
@@ -149,6 +156,45 @@ write_callback :: proc "c" (
 }
 
 @(private)
+_bucket_wait :: proc(client: ^Discord_Client, route: string) {
+	sync.lock(&client.buckets_mutex)
+	bucket_id, has_bucket_id := client.route_to_bucket[route]
+	if has_bucket_id {
+		bucket := client.buckets[bucket_id]
+		if bucket.remaining == 0 {
+			sleep_duration := time.Duration(bucket.reset_after * f64(time.Second))
+			if time.since(bucket.last_update) < sleep_duration {
+				wait := sleep_duration - time.since(bucket.last_update)
+				fmt.printfln("Pre-emptive rate limit hit for route %s, waiting %v", route, wait)
+				time.sleep(wait)
+			}
+		}
+	}
+	sync.unlock(&client.buckets_mutex)
+}
+
+@(private)
+_bucket_update :: proc(client: ^Discord_Client, route: string, req_ctx: ^Request_Context) {
+	if req_ctx.bucket_id != "" {
+		sync.lock(&client.buckets_mutex)
+		req_ctx.temp_bucket.last_update = time.now()
+
+		bid := req_ctx.bucket_id
+		if bid not_in client.buckets {
+			bid = strings.clone(req_ctx.bucket_id, context.allocator)
+		}
+		client.buckets[bid] = req_ctx.temp_bucket
+
+		rt := route
+		if rt not_in client.route_to_bucket {
+			rt = strings.clone(route, context.allocator)
+		}
+		client.route_to_bucket[rt] = bid
+		sync.unlock(&client.buckets_mutex)
+	}
+}
+
+@(private)
 _discord_request :: proc(
 	client: ^Discord_Client,
 	method: Http_Method,
@@ -168,24 +214,7 @@ _discord_request :: proc(
 
 	route := get_route(method, endpoint)
 
-	// Pre-emptive check
-	sync.lock(&client.buckets_mutex)
-	bucket_id, has_bucket_id := client.route_to_bucket[route]
-	if has_bucket_id {
-		bucket := client.buckets[bucket_id]
-		if bucket.remaining == 0 {
-			sleep_duration := time.Duration(bucket.reset_after * f64(time.Second))
-			// Simple check: if we updated it recently and it was 0, we should wait.
-			// Discord reset headers are absolute but curl gives us relative 'reset-after'
-			// which is safer.
-			if time.since(bucket.last_update) < sleep_duration {
-				wait := sleep_duration - time.since(bucket.last_update)
-				fmt.printfln("Pre-emptive rate limit hit for route %s, waiting %v", route, wait)
-				time.sleep(wait)
-			}
-		}
-	}
-	sync.unlock(&client.buckets_mutex)
+	_bucket_wait(client, route)
 
 	g: bytes.Buffer
 	bytes.buffer_init_allocator(&g, 0, 0, allocator)
@@ -209,6 +238,19 @@ _discord_request :: proc(
 		curl.easy_setopt(client.curl_handle, .POSTFIELDSIZE, i32(0))
 	}
 
+	// Set Content-Type for JSON request; build temp headers including permanent ones
+	hdr := curl.slist_append(nil, "Content-Type: application/json")
+	{
+		head := client.headers
+		for head != nil {
+			hdr = curl.slist_append(hdr, cstring(head.data))
+			head = head.next
+		}
+	}
+	curl.easy_setopt(client.curl_handle, .HTTPHEADER, hdr)
+	defer curl.slist_free_all(hdr)
+	defer curl.easy_setopt(client.curl_handle, .HTTPHEADER, client.headers)
+
 	perform_start := time.now()
 	res := curl.easy_perform(client.curl_handle)
 	perform_end := time.now()
@@ -218,24 +260,7 @@ _discord_request :: proc(
 		return {}, false
 	}
 
-	// Update bucket info
-	if req_ctx.bucket_id != "" {
-		sync.lock(&client.buckets_mutex)
-		req_ctx.temp_bucket.last_update = time.now()
-
-		bid := req_ctx.bucket_id
-		if bid not_in client.buckets {
-			bid = strings.clone(req_ctx.bucket_id, context.allocator)
-		}
-		client.buckets[bid] = req_ctx.temp_bucket
-
-		rt := route
-		if rt not_in client.route_to_bucket {
-			rt = strings.clone(route, context.allocator)
-		}
-		client.route_to_bucket[rt] = bid
-		sync.unlock(&client.buckets_mutex)
-	}
+	_bucket_update(client, route, &req_ctx)
 
 	http_code: i32
 	curl.easy_getinfo(client.curl_handle, .RESPONSE_CODE, &http_code)
@@ -271,7 +296,6 @@ discord_client_init :: proc(client: ^Discord_Client, token: string) -> bool {
 		"User-Agent: DiscordBot (https://rava.ge, 1.0.0)",
 	)
 	client.headers = curl.slist_append(client.headers, "Accept: application/json")
-	client.headers = curl.slist_append(client.headers, "Content-Type: application/json")
 
 	curl.easy_setopt(client.curl_handle, .HTTPHEADER, client.headers)
 	curl.easy_setopt(client.curl_handle, .WRITEFUNCTION, rawptr(write_callback))
@@ -352,6 +376,116 @@ discord_delete :: proc(
 	bool,
 ) #optional_ok {
 	return _discord_request(client, .DELETE, endpoint, {}, allocator)
+}
+
+@(private)
+_build_multipart_body :: proc(payload_json: []byte, files: []MultipartFile, boundary: string, allocator := context.allocator) -> (body: []byte) {
+	boundary_str := fmt.tprintf("--%s\r\n", boundary)
+	boundary_end := fmt.tprintf("--%s--\r\n", boundary)
+
+	total := len(boundary_str) + len("Content-Disposition: form-data; name=\"payload_json\"\r\n") + len("Content-Type: application/json\r\n\r\n") + len(payload_json) + 2
+	for f in files {
+		total += len(boundary_str)
+		total += len(fmt.tprintf("Content-Disposition: form-data; name=\"%s\"; filename=\"%s\"\r\n", f.field_name, f.filename))
+		total += len(fmt.tprintf("Content-Type: %s\r\n\r\n", f.mime_type))
+		total += len(f.data) + 2
+	}
+	total += len(boundary_end)
+
+	buf := make([]byte, total, allocator)
+	offset := 0
+
+	part_hdr := fmt.tprintf("%sContent-Disposition: form-data; name=\"payload_json\"\r\nContent-Type: application/json\r\n\r\n", boundary_str)
+	copy(buf[offset:], part_hdr)
+	offset += len(part_hdr)
+	copy(buf[offset:], payload_json)
+	offset += len(payload_json)
+	buf[offset] = '\r'; offset += 1
+	buf[offset] = '\n'; offset += 1
+
+	for f in files {
+		part_hdr = fmt.tprintf("%sContent-Disposition: form-data; name=\"%s\"; filename=\"%s\"\r\nContent-Type: %s\r\n\r\n", boundary_str, f.field_name, f.filename, f.mime_type)
+		copy(buf[offset:], part_hdr)
+		offset += len(part_hdr)
+		copy(buf[offset:], f.data)
+		offset += len(f.data)
+		buf[offset] = '\r'; offset += 1
+		buf[offset] = '\n'; offset += 1
+	}
+
+	copy(buf[offset:], boundary_end)
+	return buf
+}
+
+@(private)
+_discord_multipart :: proc(
+	client: ^Discord_Client,
+	method: Http_Method,
+	endpoint: string,
+	payload_json: []byte,
+	files: []MultipartFile,
+	allocator := context.allocator,
+) -> (Http_Response, bool) #optional_ok {
+	if client.curl_handle == nil do return {}, false
+	sync.lock(&client.request_mutex)
+	defer sync.unlock(&client.request_mutex)
+	client.total_requests += 1
+	route := get_route(method, endpoint)
+	_bucket_wait(client, route)
+
+	boundary := "discord_api_boundary_42"
+	body := _build_multipart_body(payload_json, files, boundary, allocator)
+
+	content_type := fmt.ctprintf("Content-Type: multipart/form-data; boundary=%s", boundary)
+	hdr := curl.slist_append(nil, content_type)
+	{ head := client.headers; for head != nil { hdr = curl.slist_append(hdr, cstring(head.data)); head = head.next } }
+	curl.easy_setopt(client.curl_handle, .HTTPHEADER, hdr)
+	defer curl.slist_free_all(hdr)
+	defer curl.easy_setopt(client.curl_handle, .HTTPHEADER, client.headers)
+
+	g: bytes.Buffer
+	bytes.buffer_init_allocator(&g, 0, 0, allocator)
+	req_ctx := Request_Context{client = client, allocator = allocator}
+
+	curl.easy_setopt(client.curl_handle, .WRITEDATA, &g)
+	curl.easy_setopt(client.curl_handle, .HEADERDATA, &req_ctx)
+	curl.easy_setopt(client.curl_handle, .HEADERFUNCTION, rawptr(header_callback))
+	curl.easy_setopt(client.curl_handle, .URL, fmt.ctprintf("%s%s", DISCORD_BASE_URL, endpoint))
+	curl.easy_setopt(client.curl_handle, .CUSTOMREQUEST, _method_cstr[method])
+
+	curl.easy_setopt(client.curl_handle, .HTTP_VERSION, i32(1))
+	curl.easy_setopt(client.curl_handle, .MIMEPOST, nil)
+
+	if len(body) > 0 {
+		curl.easy_setopt(client.curl_handle, .POST, i32(1))
+		curl.easy_setopt(client.curl_handle, .POSTFIELDS, &body[0])
+		curl.easy_setopt(client.curl_handle, .POSTFIELDSIZE, i32(len(body)))
+	} else {
+		curl.easy_setopt(client.curl_handle, .POSTFIELDS, nil)
+		curl.easy_setopt(client.curl_handle, .POSTFIELDSIZE, i32(0))
+	}
+
+	perform_start := time.now()
+	res := curl.easy_perform(client.curl_handle)
+	perform_end := time.now()
+
+	curl.easy_setopt(client.curl_handle, .POST, i32(0))
+	curl.easy_setopt(client.curl_handle, .HTTP_VERSION, i32(0))
+
+	if res != .E_OK { bytes.buffer_destroy(&g); return {}, false }
+
+	_bucket_update(client, route, &req_ctx)
+	http_code: i32
+	curl.easy_getinfo(client.curl_handle, .RESPONSE_CODE, &http_code)
+	body_slice := bytes.buffer_to_bytes(&g)
+	return Http_Response{status_code = http_code, body = body_slice, perform_time_ns = i64(time.diff(perform_start, perform_end))}, true
+}
+
+discord_post_multipart :: proc(client: ^Discord_Client, endpoint: string, payload_json: []byte, files: []MultipartFile, allocator := context.allocator) -> (Http_Response, bool) #optional_ok {
+	return _discord_multipart(client, .POST, endpoint, payload_json, files, allocator)
+}
+discord_patch_multipart :: proc(client: ^Discord_Client, endpoint: string, payload_json: []byte, files: []MultipartFile, allocator := context.allocator) -> (Http_Response, bool) #optional_ok {
+	return _discord_multipart(client, .PATCH, endpoint, payload_json, files, allocator)
 }
 
 discord_request :: proc {
