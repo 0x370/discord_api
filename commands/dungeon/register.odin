@@ -611,10 +611,10 @@ register_commands :: proc(client: ^discord.Client) {
 				player.daily_streak = 0
 			}
 		}
-
 		gold_reward := 30 + player.daily_streak * 10
 		player.gold += gold_reward
-		player.char_lootboxes += 2
+		player.last_daily_claim = time.to_unix_nanoseconds(now)
+		player.daily_streak += 1
 
 		if !db_save_player(db, &player) { logd("[daily] FAILED to save player") }
 
