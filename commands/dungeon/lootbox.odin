@@ -54,6 +54,7 @@ generate_item_lootbox :: proc(floor: int) -> [LOOTBOX_ITEM_COUNT]ItemGachaResult
 			bonus_spd = affixes.spd,
 			bonus_crit = affixes.crit,
 			special   = strings.clone(special),
+			floor     = floor,
 		}
 	}
 	return results

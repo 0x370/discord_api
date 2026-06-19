@@ -13,6 +13,7 @@ session_owners:      map[string]string
 gallery_char_cache:  map[string][]CollectedCharacter
 @(private)
 gallery_item_cache:  map[string][]ItemInstance
+lootbox_item_cache:   map[string][]ItemGachaResult
 @(private)
 sell_sessions:       map[string]Sell_Session
 @(private)
@@ -27,6 +28,7 @@ init_sessions :: proc() {
 	if session_owners == nil  do session_owners  = make(map[string]string)
 	if gallery_char_cache == nil do gallery_char_cache = make(map[string][]CollectedCharacter)
 	if sell_sessions == nil do sell_sessions = make(map[string]Sell_Session)
+	if lootbox_item_cache == nil do lootbox_item_cache = make(map[string][]ItemGachaResult)
 	if gallery_item_cache == nil do gallery_item_cache = make(map[string][]ItemInstance)
 	sync.unlock(&dungeon_mutex)
 }

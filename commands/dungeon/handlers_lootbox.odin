@@ -1,6 +1,8 @@
 package dungeon
 
 import "core:strconv"
+import "core:strings"
+import "core:sync"
 import api "../../discord/api"
 import discord "../../discord"
 
@@ -70,20 +72,24 @@ handle_lootbox :: proc(ctx: ^discord.Command_Context) {
 					base_atk = r.base_atk, base_def = r.base_def,
 					bonus_hp = r.bonus_hp, bonus_atk = r.bonus_atk,
 					bonus_def = r.bonus_def, bonus_spd = r.bonus_spd,
+					bonus_crit = r.bonus_crit,
 					special = r.special,
+					floor = r.floor,
 				}) {
 					logd("[lootbox] FAILED to insert item: %s", ITEM_NAMES[r.item_type])
 				}
 			}
 		}
-		delete_key(&gallery_item_cache, user_id)
+		sync.lock(&dungeon_mutex)
+		lootbox_item_cache[strings.clone(user_id)] = all_items[:]
+		sync.unlock(&dungeon_mutex)
 		// Find best item for thumbnail
 		best := all_items[0]
 		for it in all_items do if it.tier < best.tier do best = it
 		img_url := get_image_url(.Item, best.tier, .SWORD, "", best.item_type)
-		embed := build_lootbox_item_embed(all_items[:], img_url)
+		embed, comps := build_lootbox_item_embed(all_items[:], 1, img_url)
 		discord.edit_original_response(ctx.client, ctx.interaction.token, "")
-		discord.patch_original_response(ctx.client, ctx.interaction.token, api.InteractionCallbackData{embeds = {embed}})
+		discord.patch_original_response(ctx.client, ctx.interaction.token, api.InteractionCallbackData{embeds = {embed}, components = comps})
 	}
 }
 

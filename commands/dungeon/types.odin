@@ -67,6 +67,7 @@ ItemInstance :: struct {
 	bonus_spd:    int,
 	bonus_crit:   int,
 	special:      string,
+	floor:        int,
 }
 
 Player :: struct {
@@ -242,6 +243,7 @@ ItemGachaResult :: struct {
 	bonus_spd:    int,
 	bonus_crit:   int,
 	special:      string,
+	floor:        int,
 }
 
 Affix :: enum {

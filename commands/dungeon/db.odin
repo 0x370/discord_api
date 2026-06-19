@@ -128,7 +128,7 @@ db_delete_character :: proc(db: ^discord.Db, user_id: string, char_id: i64) {
 }
 
 db_get_items :: proc(db: ^discord.Db, user_id: string) -> []ItemInstance {
-	sql := fmt.tprintf("SELECT id, item_type, tier, base_atk, base_def, bonus_hp, bonus_atk, bonus_def, bonus_spd, bonus_crit, special FROM dungeon_items WHERE user_id = '%s' ORDER BY id", string(user_id))
+	sql := fmt.tprintf("SELECT id, item_type, tier, base_atk, base_def, bonus_hp, bonus_atk, bonus_def, bonus_spd, bonus_crit, special, floor FROM dungeon_items WHERE user_id = '%s' ORDER BY id", string(user_id))
 	stmt, ok := _sql_prepare(db.conn, sql)
 	if !ok do return nil
 	defer sqlite3.finalize(stmt)
@@ -147,8 +147,8 @@ db_get_items :: proc(db: ^discord.Db, user_id: string) -> []ItemInstance {
 db_insert_item :: proc(db: ^discord.Db, user_id: string, item: ItemInstance) -> bool {
 	item_type_str := ITEM_TIER_NAMES[item.item_type]
 	tier_str      := TIER_LABELS[item.tier]
-	sql := fmt.tprintf("INSERT INTO dungeon_items (user_id, item_type, tier, base_atk, base_def, bonus_hp, bonus_atk, bonus_def, bonus_spd, bonus_crit, special) VALUES ('%s', '%s', '%s', %v, %v, %v, %v, %v, %v, %v, '%s')",
-		string(user_id), item_type_str, tier_str, item.base_atk, item.base_def, item.bonus_hp, item.bonus_atk, item.bonus_def, item.bonus_spd, item.bonus_crit, item.special)
+	sql := fmt.tprintf("INSERT INTO dungeon_items (user_id, item_type, tier, base_atk, base_def, bonus_hp, bonus_atk, bonus_def, bonus_spd, bonus_crit, special, floor) VALUES ('%s', '%s', '%s', %v, %v, %v, %v, %v, %v, %v, '%s', %v)",
+		string(user_id), item_type_str, tier_str, item.base_atk, item.base_def, item.bonus_hp, item.bonus_atk, item.bonus_def, item.bonus_spd, item.bonus_crit, item.special, item.floor)
 	return _sql_exec(db.conn, sql)
 }
 
@@ -158,7 +158,7 @@ db_delete_item :: proc(db: ^discord.Db, user_id: string, item_id: i64) {
 }
 
 db_get_item_by_id :: proc(db: ^discord.Db, user_id: string, item_id: i64) -> (ItemInstance, bool) {
-	sql := fmt.tprintf("SELECT id, item_type, tier, base_atk, base_def, bonus_hp, bonus_atk, bonus_def, bonus_spd, bonus_crit, special FROM dungeon_items WHERE id = %v AND user_id = '%s'", item_id, string(user_id))
+	sql := fmt.tprintf("SELECT id, item_type, tier, base_atk, base_def, bonus_hp, bonus_atk, bonus_def, bonus_spd, bonus_crit, special, floor FROM dungeon_items WHERE id = %v AND user_id = '%s'", item_id, string(user_id))
 	stmt, ok := _sql_prepare(db.conn, sql)
 	if !ok do return {}, false
 	defer sqlite3.finalize(stmt)
@@ -261,6 +261,7 @@ sqlite3_read_item_row :: proc(stmt: ^sqlite3.Statement, user_id: string) -> Item
 		bonus_def = int(sqlite3.column_int64(stmt, 7)),
 		bonus_spd = int(sqlite3.column_int64(stmt, 8)),
 		bonus_crit  = int(sqlite3.column_int64(stmt, 9)),
+		floor     = int(sqlite3.column_int64(stmt, 11)),
 	}
 	if raw_special != nil do it.special = strings.clone(string(raw_special))
 	return it
@@ -295,6 +296,9 @@ _migrate_tiers :: proc(db: ^discord.Db) {
 
 	_migrate_if_needed(db, "bonus_crit_column", proc(db: ^discord.Db) {
 		_sql_exec(db.conn, "ALTER TABLE dungeon_items ADD COLUMN bonus_crit INTEGER DEFAULT 0")
+	})
+	_migrate_if_needed(db, "floor_column", proc(db: ^discord.Db) {
+		_sql_exec(db.conn, "ALTER TABLE dungeon_items ADD COLUMN floor INTEGER DEFAULT 0")
 	})
 }
 

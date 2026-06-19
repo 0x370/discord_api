@@ -32,6 +32,14 @@ register_nav_handlers :: proc(client: ^discord.Client) {
 	discord.on_component(client, "dungeon_item_list_next", proc(ctx: ^discord.Component_Context) {
 		_handle_list_nav(ctx, "item", true)
 	})
+
+	// --- Lootbox results navigation ---
+	discord.on_component(client, "dungeon_lootbox_prev", proc(ctx: ^discord.Component_Context) {
+		_handle_lootbox_nav(ctx, false)
+	})
+	discord.on_component(client, "dungeon_lootbox_next", proc(ctx: ^discord.Component_Context) {
+		_handle_lootbox_nav(ctx, true)
+	})
 }
 
 @(private)
@@ -89,6 +97,24 @@ _handle_list_nav :: proc(ctx: ^discord.Component_Context, kind: string, next: bo
 		embed, comps := build_item_list_embed(items, new_page)
 		discord.respond_component(ctx, {embed}, comps)
 	}
+}
+
+@(private)
+_handle_lootbox_nav :: proc(ctx: ^discord.Component_Context, next: bool) {
+	user_id := get_component_user_id(ctx)
+
+	page, _ := _parse_page_from_embed(ctx)
+	new_page := next ? page + 1 : page - 1
+	if new_page < 1 do new_page = 1
+
+	items, has := lootbox_item_cache[user_id]
+	if !has do return
+
+	best := items[0]
+	for it in items do if it.tier < best.tier do best = it
+	img_url := get_image_url(.Item, best.tier, .SWORD, "", best.item_type)
+	embed, comps := build_lootbox_item_embed(items, new_page, img_url)
+	discord.respond_component(ctx, {embed}, comps)
 }
 
 @(private)

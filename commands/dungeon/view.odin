@@ -239,7 +239,7 @@ build_item_embed :: proc(item: ItemInstance, page: int, total: int, image_url: s
 
 	lines: [8]string
 	lines[0] = fmt.tprintf("**%s %s**", tier_name, item_name)
-	lines[1] = fmt.tprintf("%s %s Tier — ID: %d", tier_label, item_emoji, item.id)
+	lines[1] = fmt.tprintf("%s %s Tier · Floor %d · ID: %d", tier_label, item_emoji, item.floor, item.id)
 	if item.base_atk > 0 do lines[2] = fmt.tprintf("⚔️ ATK: +%d", item.base_atk)
 	if item.base_def > 0 do lines[3] = fmt.tprintf("🛡️ DEF: +%d", item.base_def)
 
@@ -253,7 +253,11 @@ build_item_embed :: proc(item: ItemInstance, page: int, total: int, image_url: s
 		lines[5] = fmt.tprintf("**Affixes:** %s", strings.join(affix_lines[:], ", "))
 	}
 	if item.special != "" {
-		lines[6] = fmt.tprintf("✨ %s", item.special)
+		count := 1
+		for c in item.special do if c == '|' do count += 1
+		star_parts := make([dynamic]string, context.temp_allocator)
+		for _ in 0 ..< count do append(&star_parts, "✨")
+		lines[6] = fmt.tprintf("%s  %s", strings.join(star_parts[:], ""), item.special)
 	}
 
 	embed := api.Embed{
@@ -301,34 +305,59 @@ build_lootbox_result_embed :: proc(results: []CharacterGachaResult, image_url: s
 	return embed, {}
 }
 
-build_lootbox_item_embed :: proc(items: []ItemGachaResult, image_url: string = "") -> api.Embed {
+build_lootbox_item_embed :: proc(items: []ItemGachaResult, page: int, image_url: string = "") -> (api.Embed, []api.Component) {
+	total := len(items)
+	total_pages := (total + LIST_PAGE_SIZE - 1) / LIST_PAGE_SIZE
+	if total_pages < 1 do total_pages = 1
+
+	start := (page - 1) * LIST_PAGE_SIZE
+	end := start + LIST_PAGE_SIZE
+	if end > total do end = total
+
 	best_tier := items[0].tier
 	for it in items do if it.tier < best_tier do best_tier = it.tier
 
 	lines := make([dynamic]string, context.temp_allocator)
-	for it, i in items {
+	for i in start ..< end {
+		it := items[i]
 		tier_label := TIER_LABELS[it.tier]
 		item_emoji := ITEM_EMOJIS[it.item_type]
 		item_name := ITEM_NAMES[it.item_type]
-		append(&lines, fmt.tprintf("%d. %s %s — %s Tier", i + 1, item_emoji, item_name, tier_label))
+		append(&lines, fmt.tprintf("%d. %s %s · %s · F%d", i + 1, item_emoji, item_name, tier_label, it.floor))
 		stat_parts := make([dynamic]string, context.temp_allocator)
-		if it.base_atk > 0 do append(&stat_parts, fmt.tprintf("⚔️ ATK:%+d", it.base_atk))
-		if it.base_def > 0 do append(&stat_parts, fmt.tprintf("🛡️ DEF:%+d", it.base_def))
+		if it.base_atk > 0 do append(&stat_parts, fmt.tprintf("⚔️%+d", it.base_atk))
+		if it.base_def > 0 do append(&stat_parts, fmt.tprintf("🛡️%+d", it.base_def))
 		if it.bonus_hp > 0 do append(&stat_parts, fmt.tprintf("❤️+%d", it.bonus_hp))
 		if it.bonus_atk > 0 do append(&stat_parts, fmt.tprintf("⚔️+%d", it.bonus_atk))
 		if it.bonus_def > 0 do append(&stat_parts, fmt.tprintf("🛡️+%d", it.bonus_def))
 		if it.bonus_spd > 0 do append(&stat_parts, fmt.tprintf("💨+%d", it.bonus_spd))
-		if it.bonus_crit > 0 do append(&stat_parts, fmt.tprintf("💢+%d", it.bonus_crit))
-		if it.special != "" do append(&stat_parts, fmt.tprintf("✨ %s", it.special))
+		if it.bonus_crit > 0 do append(&stat_parts, fmt.tprintf("💢+%d%%", it.bonus_crit))
+		if it.special != "" {
+			count := 1
+			for c in it.special do if c == '|' do count += 1
+			star_parts := make([dynamic]string, context.temp_allocator)
+			for _ in 0 ..< count do append(&star_parts, "✨")
+			append(&stat_parts, strings.join(star_parts[:], ""))
+		}
 		if len(stat_parts) > 0 do append(&lines, fmt.tprintf("   %s", strings.join(stat_parts[:], " ")))
 	}
 
-	return api.Embed{
-		title       = fmt.tprintf("🎒 Lootbox Results (%d)", len(items)),
+	embed := api.Embed{
+		title       = fmt.tprintf("🎒 Lootbox Results (%d/%d)", page, total_pages),
 		description = strings.join(lines[:], "\n"),
 		color       = TIER_EMBED_COLORS[best_tier],
 		thumbnail   = image_url != "" ? api.EmbedThumbnail{url = image_url} : api.EmbedThumbnail{},
 	}
+
+	if total_pages <= 1 do return embed, {}
+
+	btns := make([dynamic]api.Component, 0, 2, context.temp_allocator)
+	append(&btns, api.ButtonComponent{type = .BUTTON, style = .SECONDARY, custom_id = "dungeon_lootbox_prev", label = "◀ Prev", disabled = page <= 1})
+	append(&btns, api.ButtonComponent{type = .BUTTON, style = .SECONDARY, custom_id = "dungeon_lootbox_next", label = "Next ▶", disabled = page >= total_pages})
+	row := api.ActionRowComponent{type = .ACTION_ROW, components = btns[:]}
+	comps := make([dynamic]api.Component, 0, 1, context.temp_allocator)
+	append(&comps, row)
+	return embed, comps[:]
 }
 
 LIST_PAGE_SIZE :: 10
@@ -343,22 +372,19 @@ build_character_list_embed :: proc(chars: []CollectedCharacter, page: int) -> (a
 	if end > total do end = total
 
 	lines := make([dynamic]string, context.temp_allocator)
-	append(&lines, fmt.tprintf("**Characters (%d-%d of %d)**", start + 1, end, total))
 	for i in start ..< end {
 		c := chars[i]
-		ability_tag := ""
-		if c.ability_name != "" {
-			ability_tag = fmt.tprintf(" ✨ %s", c.ability_name)
-		}
-		append(&lines, fmt.tprintf("%d. %s — %s Tier %s%s — ID: %d",
-			i + 1, c.name, TIER_LABELS[c.tier], WEAPON_COMPAT_NAMES[c.weapon_compat], ability_tag, c.id))
+		ability_emoji := c.ability_name != "" ? " · ✨" : ""
+		append(&lines, fmt.tprintf("%d. %s · %s · ID:%d%s",
+			i + 1, c.name, TIER_LABELS[c.tier], c.id, ability_emoji))
 	}
 
 	embed := api.Embed{
-		title       = fmt.tprintf("📜 Character List (%d/%d)", page, total_pages),
+		title       = fmt.tprintf("📜 Characters (%d/%d)", page, total_pages),
 		description = strings.join(lines[:], "\n"),
 		color       = 0x9b59b6,
 	}
+
 
 	if total_pages <= 1 do return embed, {}
 
@@ -381,34 +407,42 @@ build_item_list_embed :: proc(items: []ItemInstance, page: int) -> (api.Embed, [
 	if end > total do end = total
 
 	lines := make([dynamic]string, context.temp_allocator)
-	append(&lines, fmt.tprintf("**Items (%d-%d of %d)**", start + 1, end, total))
 	for i in start ..< end {
 		it := items[i]
-		affix_str := ""
-		if it.bonus_hp > 0 || it.bonus_atk > 0 || it.bonus_def > 0 || it.bonus_spd > 0 {
-			affix_parts := make([dynamic]string, context.temp_allocator)
-			if it.bonus_hp  > 0 do append(&affix_parts, fmt.tprintf("❤️+%d", it.bonus_hp))
-			if it.bonus_atk > 0 do append(&affix_parts, fmt.tprintf("⚔️+%d", it.bonus_atk))
-			if it.bonus_crit > 0 do append(&affix_parts, fmt.tprintf("💢+%d", it.bonus_crit))
-			if it.bonus_def > 0 do append(&affix_parts, fmt.tprintf("🛡️+%d", it.bonus_def))
-			if it.bonus_spd > 0 do append(&affix_parts, fmt.tprintf("💨+%d", it.bonus_spd))
-			affix_str = strings.join(affix_parts[:], " ")
+
+		special_count := 0
+		if it.special != "" {
+			special_count = 1
+			for c in it.special do if c == '|' do special_count += 1
 		}
-		special_tag := ""
-		if it.special != "" do special_tag = fmt.tprintf(" ✨ %s", it.special)
-		append(&lines, fmt.tprintf("%d. %s %s — %s Tier — ID: %d%s",
-			i + 1, ITEM_EMOJIS[it.item_type], ITEM_NAMES[it.item_type], TIER_LABELS[it.tier], it.id, special_tag))
-		if affix_str != "" || it.base_atk > 0 || it.base_def > 0 {
-			stat_line := fmt.tprintf("     ⚔️ ATK:%+d 🛡️ DEF:%+d | %s", it.base_atk, it.base_def, affix_str)
-			append(&lines, stat_line)
+		star_str := ""
+		if special_count > 0 {
+			star_parts := make([dynamic]string, context.temp_allocator)
+			for _ in 0 ..< special_count do append(&star_parts, "✨")
+			star_str = fmt.tprintf(" · %s", strings.join(star_parts[:], ""))
 		}
+
+		stat_parts := make([dynamic]string, context.temp_allocator)
+		if it.base_atk > 0 do append(&stat_parts, fmt.tprintf("⚔️%+d", it.base_atk))
+		if it.base_def > 0 do append(&stat_parts, fmt.tprintf("🛡️%+d", it.base_def))
+		if it.bonus_hp > 0 do append(&stat_parts, fmt.tprintf("❤️+%d", it.bonus_hp))
+		if it.bonus_atk > 0 do append(&stat_parts, fmt.tprintf("⚔️+%d", it.bonus_atk))
+		if it.bonus_def > 0 do append(&stat_parts, fmt.tprintf("🛡️+%d", it.bonus_def))
+		if it.bonus_spd > 0 do append(&stat_parts, fmt.tprintf("💨+%d", it.bonus_spd))
+		if it.bonus_crit > 0 do append(&stat_parts, fmt.tprintf("💢+%d%%", it.bonus_crit))
+		stat_str := strings.join(stat_parts[:], " ")
+
+		append(&lines, fmt.tprintf("%d. %s %s · %s · F%d · ID:%d%s  %s",
+			i + 1, ITEM_EMOJIS[it.item_type], ITEM_NAMES[it.item_type],
+			TIER_LABELS[it.tier], it.floor, it.id, star_str, stat_str))
 	}
 
 	embed := api.Embed{
-		title       = fmt.tprintf("🎒 Item List (%d/%d)", page, total_pages),
+		title       = fmt.tprintf("🎒 Items (%d/%d)", page, total_pages),
 		description = strings.join(lines[:], "\n"),
 		color       = 0x3498db,
 	}
+
 
 	if total_pages <= 1 do return embed, {}
 
