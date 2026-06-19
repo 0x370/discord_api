@@ -107,6 +107,7 @@ MonsterTemplate :: struct {
 	gold_min:      int,
 	gold_max:      int,
 	lootbox_chance: f64,
+	boss_ability:   string,
 }
 
 CombatEvent :: enum {
@@ -148,6 +149,7 @@ CombatMonster :: struct {
 	max_mana:  int,
 	mana:      int,
 	mana_regen: int,
+	ability_name: string,
 }
 
 EncounterState :: enum {
@@ -157,57 +159,68 @@ EncounterState :: enum {
 	PLAYER_LOST,
 }
 
+CombatBuffs :: struct {
+	shield:                int,
+	monster_bleed:         int,
+	player_atk_ramp:       int,
+	block_charges:         int,
+	monster_atk_debuff:    bool,
+	monster_frozen:        int,
+	stun_freeze_cooldown:  int,
+	block_cooldown:        int,
+	crit_chance:            int,
+	total_bonus_spd:       int,
+}
+
+CombatCaps :: struct {
+	bonus_attack_procs:    int,
+	life_steal_total:      int,
+	shield_this_turn:      bool,
+	heal_this_turn:        bool,
+	regen_this_turn:       bool,
+	boss_resist_used:      bool,
+	thorns_used:           bool,
+	def_reduce_done:       bool,
+	lightning_this_turn:   bool,
+	char_revive_used:      bool,
+}
+
+CombatTracking :: struct {
+	first_attack:          bool,
+	last_damage_dealt:     int,
+	last_damage_taken:     int,
+	monster_stunned:       bool,
+	pending_heal:          int,
+	monster_original_atk:  int,
+	player_base_atk:       int,
+}
+
 CombatState :: struct {
-	player:              CombatPlayer,
-	monster:             CombatMonster,
-	floor:               int,
-	boss_floor:          bool,
-	state:               EncounterState,
-	turn:                int,
-	ability_cooldown:    int,
-	char_ability_cooldown: int,
-	char_ability_name:   string,
-	class_ability_name:  string,
-	ability_mana_cost:   int,
+	player:                 CombatPlayer,
+	monster:                CombatMonster,
+	floor:                  int,
+	boss_floor:             bool,
+	state:                  EncounterState,
+	turn:                   int,
+	ability_cooldown:       int,
+	char_ability_cooldown:  int,
+	char_ability_name:      string,
+	class_ability_name:     string,
+	ability_mana_cost:      int,
 	char_ability_mana_cost: int,
-	first_attack:          bool,  // First strike per combat
-	last_damage_dealt:     int,   // Tracked for lifesteal
-	last_damage_taken:     int,   // Tracked for dodge/thorns/boss resist
-	monster_stunned:       bool,  // Stun skip next monster turn
-	total_bonus_spd:       int,   // Sum of bonus_spd from equipped items
-	shield:                int,   // Temp HP shield
-	pending_heal:          int,   // Accumulated healing during TURN_START
-	crit_chance:          int,   // Total crit% from equipped items
-	player_base_atk:      int,   // Base ATK before ramping buffs
-	monster_original_atk: int,   // Monster ATK before debuffs
-	monster_bleed:        int,   // Bleed ticks remaining (0 = none)
-	player_atk_ramp:      int,   // ATK ramp stacks (0-5, each +5%)
-	block_charges:        int,   // Block stacks (consumed on hit)
-	monster_atk_debuff:   bool,  // ATK debuff active on monster
-	monster_frozen:       int,   // Freeze turns remaining (0 = none)
-	// Anti-stacking caps
-	bonus_attack_procs:      int,   // Extra dmg hook procs this attack (reset each advance)
-	life_steal_total:        int,   // Accumulated life steal per damage-dealt event
-	shield_this_turn:        bool,  // One shield per TURN_START
-	heal_this_turn:          bool,  // One heal-per-turn per TURN_START
-	regen_this_turn:         bool,  // One regen per TURN_START
-	boss_resist_used:        bool,  // One boss resist per damage event
-	thorns_used:             bool,  // One thorns per damage event
-	def_reduce_done:         bool,  // One def reduce per combat
-	lightning_this_turn:     bool,  // One lightning pulse per TURN_START
-	stun_freeze_cooldown:    int,   // Stun/freeze immunity turns
-	block_cooldown:          int,   // Block cooldown turns
-	char_revive_used:        bool,  // Prevent infinite revive loops (Phoenix Rebirth, Last Stand)
-	hooks:               map[CombatEvent][dynamic]CombatHook,
-	reward_mult:         f64,
-	rare_mult:           f64,
-	log:                 [dynamic]string,
-	reward_gold:         int,
-	reward_lootboxes:    int,
-	active:              bool,
-	interaction_token:   string,
-	message_id:          string,
-	channel_id:          string,
+	buffs:                  CombatBuffs,
+	caps:                   CombatCaps,
+	track:                  CombatTracking,
+	hooks:                  map[CombatEvent][dynamic]CombatHook,
+	reward_mult:            f64,
+	rare_mult:              f64,
+	log:                    [dynamic]string,
+	reward_gold:            int,
+	reward_lootboxes:       int,
+	active:                 bool,
+	interaction_token:      string,
+	message_id:             string,
+	channel_id:             string,
 }
 
 CharacterGachaResult :: struct {

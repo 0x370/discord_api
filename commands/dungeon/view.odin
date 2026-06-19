@@ -79,7 +79,7 @@ build_profile_embed :: proc(p: ^Player, char: CollectedCharacter, items: map[i64
 build_battle_embed :: proc(state: ^CombatState, monster_image_url: string = "") -> (api.Embed, []api.Component) {
 	hp_pct := 0
 	if state.player.max_hp > 0 do hp_pct = state.player.hp * 10 / state.player.max_hp
-	shield_str := state.shield > 0 ? fmt.tprintf(" 🛡️%d", state.shield) : ""
+	shield_str := state.buffs.shield > 0 ? fmt.tprintf(" 🛡️%d", state.buffs.shield) : ""
 	hp_bar := fmt.tprintf("%s%s %d/%d HP%s", strings.repeat("█", hp_pct), strings.repeat("░", 10 - hp_pct), state.player.hp, state.player.max_hp, shield_str)
 
 	mp_pct := 0
@@ -111,7 +111,11 @@ build_battle_embed :: proc(state: ^CombatState, monster_image_url: string = "") 
 	fields := make([]api.EmbedField, fields_len, context.temp_allocator)
 	player_name := state.player.name != "" ? state.player.name : "Unknown"
 	fields[0] = api.EmbedField{name = player_name, value = fmt.tprintf("%s\n%s", hp_bar, mp_bar), _inline = false}
-	fields[1] = api.EmbedField{name = fmt.tprintf("%s %s%s%s", m.emoji, m.name, rare_tag, boss_tag), value = fmt.tprintf("%s\n%s", mhp_bar, mmp_bar), _inline = false}
+	monster_value := fmt.tprintf("%s\n%s", mhp_bar, mmp_bar)
+	if boss_desc := get_boss_ability_description(m.ability_name); boss_desc != "" {
+		monster_value = fmt.tprintf("%s\n\n%s", monster_value, boss_desc)
+	}
+	fields[1] = api.EmbedField{name = fmt.tprintf("%s %s%s%s", m.emoji, m.name, rare_tag, boss_tag), value = monster_value, _inline = false}
 
 	title := fmt.tprintf("⚔️ Dungeon — Floor %d · Turn %d", state.floor, state.turn)
 	color := 0xe67e22

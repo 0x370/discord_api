@@ -488,6 +488,27 @@ _patch_webhook :: proc(client: ^Client, interaction_token: string, suffix: strin
 	return ok
 }
 
+patch_original_response :: proc(client: ^Client, interaction_token: string, data: api.InteractionCallbackData) -> (message_id: string, ok: bool) {
+	body, err := json.marshal(data, allocator = context.temp_allocator)
+	if err != nil {
+		fmt.eprintfln("Failed to marshal webhook payload: %v", err)
+		return "", false
+	}
+	endpoint := fmt.tprintf("/webhooks/%s/%s/messages/@original", client.application_id, interaction_token)
+	resp, rok := api.discord_patch(&client.rest_client, endpoint, body)
+	if !rok do return "", false
+	defer delete(resp.body)
+	if resp.status_code < 200 || resp.status_code >= 300 {
+		fmt.eprintfln("patch_original_response got HTTP %d: %s", resp.status_code, string(resp.body))
+		return "", false
+	}
+	msg: api.Message
+	if json.unmarshal(resp.body, &msg) == nil && msg.id != "" {
+		return strings.clone(string(msg.id)), true
+	}
+	return "", true
+}
+
 _post_webhook :: proc(client: ^Client, interaction_token: string, data: api.InteractionCallbackData) -> bool {
 	body, err := json.marshal(data, allocator = context.temp_allocator)
 	if err != nil {

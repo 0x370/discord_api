@@ -51,7 +51,7 @@ generate_monster :: proc(floor: int, rare_mult: f64) -> CombatMonster {
 		hp  := tmpl.base_hp + tmpl.scale_hp * level
 		atk := tmpl.base_atk + tmpl.scale_atk * level
 		def := tmpl.base_def + tmpl.scale_def * level
-		return CombatMonster{name = tmpl.name, emoji = tmpl.emoji, kind = .Boss, hp = hp, max_hp = hp, atk = atk, def = def, max_mana = tmpl.base_mana, mana = 0, mana_regen = tmpl.mana_regen}
+		return CombatMonster{name = tmpl.name, emoji = tmpl.emoji, kind = .Boss, hp = hp, max_hp = hp, atk = atk, def = def, max_mana = tmpl.base_mana, mana = 0, mana_regen = tmpl.mana_regen, ability_name = tmpl.boss_ability}
 	}
 
 	is_rare := rand.float64() < RARE_MONSTER_CHANCE * rare_mult
@@ -88,12 +88,12 @@ combat_deal_damage :: proc(atk: int, def: int) -> int {
 @(private)
 _advance_turn :: proc(state: ^CombatState) {
 	state.turn += 1
-	state.bonus_attack_procs = 0
-	state.life_steal_total = 0
-	state.boss_resist_used = false
-	state.thorns_used = false
-	if state.stun_freeze_cooldown > 0 do state.stun_freeze_cooldown -= 1
-	if state.block_cooldown > 0 do state.block_cooldown -= 1
+	state.caps.bonus_attack_procs = 0
+	state.caps.life_steal_total = 0
+	state.caps.boss_resist_used = false
+	state.caps.thorns_used = false
+	if state.buffs.stun_freeze_cooldown > 0 do state.buffs.stun_freeze_cooldown -= 1
+	if state.buffs.block_cooldown > 0 do state.buffs.block_cooldown -= 1
 	if state.monster.hp <= 0 {
 		emit(state, .ON_KILL)
 		state.state = .PLAYER_WON
@@ -121,14 +121,14 @@ combat_basic_attack :: proc(state: ^CombatState) {
 	dmg := combat_deal_damage(state.player.atk, state.monster.def)
 
 	// Crit check
-	if state.crit_chance > 0 && rand.int_max(100) < state.crit_chance {
+	if state.buffs.crit_chance > 0 && rand.int_max(100) < state.buffs.crit_chance {
 		dmg = dmg * 2
 		log_fmt(state, "💢 **Critical Hit!**")
 	}
 
 	state.monster.hp -= dmg
 	if state.monster.hp < 0 do state.monster.hp = 0
-	state.last_damage_dealt = dmg
+	state.track.last_damage_dealt = dmg
 	logd("[combat] basic_attack dmg=%d monster_hp=%d/%d", dmg, state.monster.hp, state.monster.max_hp)
 	log_fmt(state, "⚔️ **%s** attacked %s for **%d** damage!", state.player.name, state.monster.name, dmg)
 	emit(state, .ON_ATTACK)
@@ -139,13 +139,13 @@ combat_monster_turn :: proc(state: ^CombatState) {
 	if state.monster.hp <= 0 do return
 
 	// Bleed tick
-	if state.monster_bleed > 0 {
+	if state.buffs.monster_bleed > 0 {
 		bleed_dmg := state.monster.max_hp * 5 / 100
 		if bleed_dmg < 1 do bleed_dmg = 1
 		state.monster.hp -= bleed_dmg
 		if state.monster.hp < 0 do state.monster.hp = 0
-		state.monster_bleed -= 1
-		log_fmt(state, "🩸 **Bleed** ticked for **%d** damage! (%d turns left)", bleed_dmg, state.monster_bleed)
+		state.buffs.monster_bleed -= 1
+		log_fmt(state, "🩸 **Bleed** ticked for **%d** damage! (%d turns left)", bleed_dmg, state.buffs.monster_bleed)
 		if state.monster.hp <= 0 {
 			_advance_turn(state)
 			return
@@ -153,45 +153,45 @@ combat_monster_turn :: proc(state: ^CombatState) {
 	}
 
 	// Freeze check
-	if state.monster_frozen > 0 {
-		state.monster_frozen -= 1
-		log_fmt(state, "❄️ %s is frozen and cannot act! (%d turns left)", state.monster.name, state.monster_frozen)
+	if state.buffs.monster_frozen > 0 {
+		state.buffs.monster_frozen -= 1
+		log_fmt(state, "❄️ %s is frozen and cannot act! (%d turns left)", state.monster.name, state.buffs.monster_frozen)
 		return
 	}
 
 	// Stun check
-	if state.monster_stunned {
-		state.monster_stunned = false
+	if state.track.monster_stunned {
+		state.track.monster_stunned = false
 		log_fmt(state, "😵 %s is stunned and cannot act!", state.monster.name)
 		return
 	}
 
 	// Compute monster ATK with debuff
 	monster_atk := state.monster.atk
-	if state.monster_atk_debuff {
-		monster_atk = state.monster_original_atk * 80 / 100
+	if state.buffs.monster_atk_debuff {
+		monster_atk = state.track.monster_original_atk * 80 / 100
 	}
 
 	dmg := combat_deal_damage(monster_atk, state.player.def)
-	state.last_damage_taken = dmg
+	state.track.last_damage_taken = dmg
 
 	// Shield absorbs damage before HP
-	if state.shield > 0 {
-		if dmg <= state.shield {
-			state.shield -= dmg
-			log_fmt(state, "🛡️ **Shield** absorbed **%d** damage! (%d remaining)", dmg, state.shield)
+	if state.buffs.shield > 0 {
+		if dmg <= state.buffs.shield {
+			state.buffs.shield -= dmg
+			log_fmt(state, "🛡️ **Shield** absorbed **%d** damage! (%d remaining)", dmg, state.buffs.shield)
 			return
 		} else {
-			dmg -= state.shield
-			log_fmt(state, "🛡️ **Shield** broke after absorbing **%d** damage!", state.shield)
-			state.shield = 0
+			dmg -= state.buffs.shield
+			log_fmt(state, "🛡️ **Shield** broke after absorbing **%d** damage!", state.buffs.shield)
+			state.buffs.shield = 0
 		}
 	}
 
 	// Block — negate entire hit
-	if state.block_charges > 0 {
-		state.block_charges -= 1
-		state.block_cooldown = 2
+	if state.buffs.block_charges > 0 {
+		state.buffs.block_charges -= 1
+		state.buffs.block_cooldown = 2
 		log_fmt(state, "🛡️ **Blocked!** The attack was negated!")
 		return
 	}
