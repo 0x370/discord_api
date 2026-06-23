@@ -26,7 +26,7 @@ A gacha-style RPG with turn-based combat, character collection, and item gearing
 - **Character gacha** — roll for characters across 6 tiers with class types, weapon compatibility, and S-rank abilities
 - **Item gacha** — collect equipment with affixes, special effects, and slot types
 - **Turn-based combat** — hook-driven battle system with 25+ special effects (bleed, freeze, lifesteal, thorns, lightning pulse, etc.)
-- **3 classes** — Attacker, Healer, Tank with distinct combat hooks
+- **3 classes** — Attacker, Healer with distinct combat hooks
 - **Floor progression** — infinite dungeon floors with scaling monsters; boss encounters every 5 floors
 - **Daily rewards** — character and item lootboxes
 - **Profile & gallery** — view your collection with paginated navigation
